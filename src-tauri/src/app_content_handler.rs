@@ -1,15 +1,7 @@
 use crate::json_handler::JSONHandler;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
-
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
-pub struct RepoData {
-    pub owner: String,
-    pub repo_name: String,
-    pub latest_release: String,
-    pub system_version: String,
-    pub notes: String,
-}
+use tracker_libs::RepoData;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AppContentHandler {}

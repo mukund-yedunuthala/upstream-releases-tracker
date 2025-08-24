@@ -3,11 +3,9 @@ mod config_handler;
 mod git_api_handler;
 mod helper;
 mod json_handler;
+use crate::app_content_handler::AppContentHandler;
 use std::collections::HashMap;
-
-use crate::{
-    app_content_handler::AppContentHandler, app_content_handler::RepoData, config_handler::Config,
-};
+use tracker_libs::{Config, RepoData};
 
 #[tauri::command]
 async fn get_config() -> Result<Config, String> {

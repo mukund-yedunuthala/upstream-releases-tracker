@@ -1,5 +1,6 @@
-use crate::config_handler::{Config, ConfigHandler};
+use crate::config_handler::ConfigHandler;
 use regex::Regex;
+use tracker_libs::Config;
 
 pub fn read_config() -> Config {
     let mut config_struct = Config::new();

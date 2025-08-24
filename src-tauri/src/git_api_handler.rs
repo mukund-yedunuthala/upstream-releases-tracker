@@ -1,7 +1,5 @@
 use reqwest::blocking::Client;
-
-use crate::{app_content_handler::RepoData, config_handler::Config};
-
+use tracker_libs::{Config, RepoData};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GitHandler;
 
