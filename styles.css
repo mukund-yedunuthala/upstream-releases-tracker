@@ -26,69 +26,8 @@
     text-align: center;
 }
 
-.logo {
-    height: 6em;
-    padding: 1.5em;
-    will-change: filter;
-    transition: 0.75s;
-}
-
-.logo.tauri:hover {
-    filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-    display: flex;
-    justify-content: center;
-}
-
-a {
-    font-weight: 500;
-    color: #646cff;
-    text-decoration: inherit;
-}
-
-a:hover {
-    color: #535bf2;
-}
-
 h1 {
     text-align: center;
-}
-
-input,
-button {
-    border-radius: 8px;
-    border: 1px solid transparent;
-    padding: 0.6em 1.2em;
-    font-size: 1em;
-    font-weight: 500;
-    font-family: inherit;
-    color: #0f0f0f;
-    background-color: #ffffff;
-    transition: border-color 0.25s;
-    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-    cursor: pointer;
-}
-
-button:hover {
-    border-color: #396cd8;
-}
-button:active {
-    border-color: #396cd8;
-    background-color: #e8e8e8;
-}
-
-input,
-button {
-    outline: none;
-}
-
-#greet-input {
-    margin-right: 5px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -96,46 +35,85 @@ button {
         color: #f6f6f6;
         background-color: #2f2f2f;
     }
-
-    a:hover {
-        color: #24c8db;
+    .input-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
     }
 
-    input,
-    button {
-        color: #ffffff;
-        background-color: #0f0f0f98;
+    .url-input {
+        flex-grow: 1;
+        padding: 15px;
+        font-size: 1rem;
+        font-weight: 500;
+        font-family: inherit;
+        color: #cbc4cc;
+        background-color: #141314;
+        border: 1px solid transparent;
+        border-radius: 10px;
     }
-    button:active {
-        background-color: #0f0f0f69;
+    .btn {
+        border-radius: 10px;
+        border: 1px solid transparent;
+        padding: 0.6em 1.2em;
+        font-size: 1em;
+        font-weight: 500;
+        font-family: inherit;
+        color: #0f0f0f;
+        background-color: #ffffff;
+        transition: border-color 0.25s;
+        box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
     }
-}
 
-/* src/style.css */
-.app {
-    font-family: Arial, sans-serif;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
-}
+    .add-btn {
+        background-color: #347d39;
+        color: white;
+    }
 
-.repo-form {
-    margin: 20px 0;
-}
+    .refresh-btn {
+        background-color: #3178c6;
+        color: white;
+        margin-bottom: 15px;
+    }
 
-.repo-list ul {
-    list-style: none;
-    padding: 0;
-}
+    .delete-btn {
+        background-color: #8c1d18;
+        color: white;
+        margin-bottom: 15px;
+    }
 
-.repo-list li {
-    background: #f5f5f5;
-    padding: 10px;
-    margin: 5px 0;
-    border-radius: 4px;
-}
+    .repos-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
 
-.repo-list a {
-    color: #0066cc;
-    text-decoration: none;
+    .repo-card {
+        border: 1px solid #ccc;
+        padding: 12px;
+        border-radius: 8px;
+        box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .repo-info {
+        flex-grow: 1;
+    }
+
+    .owner {
+        margin: 4px 0 0 0;
+        color: #555;
+    }
+
+    .repo-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .empty-message {
+        color: #666;
+        font-style: italic;
+    }
 }

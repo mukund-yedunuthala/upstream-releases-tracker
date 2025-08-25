@@ -1,43 +1,157 @@
-use crate::components::repo_form::RepoForm;
-use crate::components::repo_list::RepoList;
+use std::collections::HashMap;
+use tracker_libs::RepoData;
+use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
-
-mod components;
-mod models;
-
-use models::Repo;
+mod yew_helper;
+use yew_helper::call_get_repos;
 
 #[function_component(App)]
 fn app() -> Html {
-    let repos = use_state(|| Vec::<Repo>::new());
+    let repos = use_state(|| None::<HashMap<String, RepoData>>);
+    let loading = use_state(|| false);
+    let input_url = use_state(|| "".to_string());
 
+    // Manual fetch repos callback
     let fetch_repos = {
         let repos = repos.clone();
+        let loading = loading.clone();
         Callback::from(move |_| {
-            let new_repos = vec![
-                Repo {
-                    id: 1,
-                    name: "Placeholder Repo 1".to_string(),
-                    url: "https://github.com/placeholder/repo1".to_string(),
-                    status: "Active".to_string(),
-                },
-                Repo {
-                    id: 2,
-                    name: "Placeholder Repo 2".to_string(),
-                    url: "https://github.com/placeholder/repo2".to_string(),
-                    status: "Inactive".to_string(),
-                },
-            ];
-            repos.set(new_repos);
+            let repos = repos.clone();
+            let loading = loading.clone();
+            spawn_local(async move {
+                loading.set(true);
+                match call_get_repos().await {
+                    Ok(data) => repos.set(Some(data)),
+                    Err(err) => web_sys::console::error_1(&err.into()),
+                }
+                loading.set(false);
+            });
+        })
+    };
+
+    // Placeholder for delete repo command
+    let on_delete = {
+        Callback::from(move |repo_name: String| {
+            // TODO: invoke tauri delete command here
+            web_sys::console::log_1(&format!("Delete repo: {}", repo_name).into());
+        })
+    };
+
+    // Placeholder for refresh individual repo command
+    let on_refresh_repo = {
+        Callback::from(move |repo_name: String| {
+            // TODO: invoke tauri refresh command for a single repo
+            web_sys::console::log_1(&format!("Refresh repo: {}", repo_name).into());
+        })
+    };
+
+    // Handle input change
+    let on_input_change = {
+        let input_url = input_url.clone();
+        Callback::from(move |e: InputEvent| {
+            if let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() {
+                input_url.set(input.value());
+            }
+        })
+    };
+
+    // Placeholder for adding a new repo URL command
+    let on_add_repo = {
+        let input_url = input_url.clone();
+        let repos = repos.clone();
+        let loading = loading.clone();
+
+        Callback::from(move |_| {
+            let url = (*input_url).clone();
+            if url.trim().is_empty() {
+                // ignore empty
+                return;
+            }
+            let repos = repos.clone();
+            let loading = loading.clone();
+            spawn_local(async move {
+                loading.set(true);
+                // TODO: invoke tauri add_repo command with `url`
+                web_sys::console::log_1(&format!("Add repo URL: {}", url).into());
+
+                // Clear input after add
+                // input_url.set(String::new());
+
+                // Optionally refresh all repos after add
+                match call_get_repos().await {
+                    Ok(data) => repos.set(Some(data)),
+                    Err(err) => web_sys::console::error_1(&err.into()),
+                }
+
+                loading.set(false);
+            });
         })
     };
 
     html! {
-        <div class="app">
-            <h1>{"Repository Manager"}</h1>
-            <RepoForm on_submit={fetch_repos} />
-            <RepoList repos={(*repos).clone()} />
-        </div>
+        html! {
+            <div class="app-container">
+                <h1>{ "My Repos" }</h1>
+                <div class="input-row">
+                    <input
+                        type="text"
+                        placeholder="Enter repository URL"
+                        value={(*input_url).clone()}
+                        oninput={on_input_change}
+                        class="url-input" />
+                    <button onclick={on_add_repo} disabled={*loading} class="btn add-btn">
+                        { if *loading { "Adding..." } else { "Add Repo" } }
+                    </button>
+                </div>
+
+                <button onclick={fetch_repos.clone()} disabled={*loading} class="btn refresh-btn">
+                    { if *loading { "Loading..." } else { "Refresh All" } }
+                </button>
+
+                {
+                    if let Some(repo_map) = &*repos {
+                        html! {
+                            <div class="repos-list">
+                                { for repo_map.values().map(|repo| {
+                                    let repo_name = repo.repo_name.clone();
+                                    html! {
+                                        <div class="repo-card">
+                                            <div class="repo-info">
+                                                <strong>{ &repo.repo_name }</strong>
+                                                <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
+                                            </div>
+                                            <div class="repo-actions">
+                                                <button onclick={
+                                                    let on_delete = on_delete.clone();
+                                                    let name = repo_name.clone();
+                                                    Callback::from(move |_| on_delete.emit(name.clone()))
+                                                } class="btn delete-btn">
+                                                    { "Delete" }
+                                                </button>
+                                                <button onclick={
+                                                    let on_refresh = on_refresh_repo.clone();
+                                                    let name = repo_name.clone();
+                                                    Callback::from(move |_| on_refresh.emit(name.clone()))
+                                                } class="btn refresh-btn">
+                                                    { "Refresh" }
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                })}
+                            </div>
+                        }
+                    } else {
+                        html! {
+                            <p class="empty-message">
+                                { "No repositories loaded. Use the 'Refresh All' button or add repos above." }
+                            </p>
+                        }
+                    }
+                }
+            </div>
+        }
+
     }
 }
 
