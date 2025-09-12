@@ -43,3 +43,9 @@ pub async fn call_refresh_repo(url: String) {
     let js_args = to_value(&args).unwrap(); // serialize to JsValue
     let _ = invoke("refresh_repo", js_args).await;
 }
+
+pub async fn call_add_repo(url: String) {
+    let args = RepoArgs { url };
+    let js_args = to_value(&args).unwrap(); // serialize to JsValue
+    let _ = invoke("add_repo", js_args).await;
+}

@@ -67,6 +67,40 @@ async fn refresh_repo(url: String) -> Result<String, String> {
     Ok(format!("Repo refreshed successfully"))
 }
 
+#[tauri::command]
+async fn add_repo(url: String) -> Result<String, String> {
+    // Prepare datafile path
+    let datafile_path = dirs::data_local_dir()
+        .ok_or("Failed to get local data directory")?
+        .join(DATAFILE);
+
+    let datafile_path_string = datafile_path
+        .to_str()
+        .ok_or("Failed to convert datafile path to string")?
+        .to_string();
+
+    let config = helper::read_config();
+
+    let git_api_handler = GitHandler {};
+
+    if helper::is_valid_repo_url(&url) {
+        match git_api_handler.post_request(&config, url.clone()).await {
+            Ok(new_repo_data) => {
+                // Repository added successfully
+                AppContentHandler::add_repo(&datafile_path_string, url, new_repo_data);
+            }
+            Err(e) => {
+                // Handle error on adding repository
+                eprintln!("Error adding repository: {}", e);
+            }
+        }
+    } else {
+        eprintln!("Invalid url: {}", url);
+    }
+
+    Ok(format!("Repo added successfully"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -74,6 +108,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_repos,
+            add_repo,
             delete_repo,
             refresh_repo
         ])

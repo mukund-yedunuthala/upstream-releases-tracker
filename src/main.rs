@@ -56,10 +56,9 @@ fn app() -> Html {
             spawn_local(async move {
                 loading.set(true);
                 // TODO: invoke tauri add_repo command with `url`
-                web_sys::console::log_1(&format!("Add repo URL: {}", url).into());
-
+                web_sys::console::log_1(&format!("Add repo URL: {}", url.clone()).into());
+                yew_helper::call_add_repo(url.clone()).await;
                 // Clear input after add
-                // input_url.set(String::new());
 
                 // Optionally refresh all repos after add
                 match call_get_repos().await {
@@ -69,6 +68,7 @@ fn app() -> Html {
 
                 loading.set(false);
             });
+            input_url.set(String::new());
         })
     };
 
