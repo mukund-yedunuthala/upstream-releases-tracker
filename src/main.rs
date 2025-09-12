@@ -29,22 +29,6 @@ fn app() -> Html {
         })
     };
 
-    // Placeholder for delete repo command
-    let on_delete = {
-        Callback::from(move |repo_name: String| {
-            // TODO: invoke tauri delete command here
-            web_sys::console::log_1(&format!("Delete repo: {}", repo_name).into());
-        })
-    };
-
-    // Placeholder for refresh individual repo command
-    let on_refresh_repo = {
-        Callback::from(move |repo_name: String| {
-            // TODO: invoke tauri refresh command for a single repo
-            web_sys::console::log_1(&format!("Refresh repo: {}", repo_name).into());
-        })
-    };
-
     // Handle input change
     let on_input_change = {
         let input_url = input_url.clone();
@@ -112,8 +96,7 @@ fn app() -> Html {
                     if let Some(repo_map) = &*repos {
                         html! {
                             <div class="repos-list">
-                                { for repo_map.values().map(|repo| {
-                                    let repo_name = repo.repo_name.clone();
+                                { for repo_map.iter().map(|(repo_key, repo)| {
                                     html! {
                                         <div class="repo-card">
                                             <div class="repo-info">
@@ -121,20 +104,30 @@ fn app() -> Html {
                                                 <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
                                             </div>
                                             <div class="repo-actions">
-                                                <button onclick={
-                                                    let on_delete = on_delete.clone();
-                                                    let name = repo_name.clone();
-                                                    Callback::from(move |_| on_delete.emit(name.clone()))
-                                                } class="btn delete-btn">
-                                                    { "Delete" }
-                                                </button>
-                                                <button onclick={
-                                                    let on_refresh = on_refresh_repo.clone();
-                                                    let name = repo_name.clone();
-                                                    Callback::from(move |_| on_refresh.emit(name.clone()))
+                                            <button onclick={
+                                                let repo_url = repo_key.clone();
+                                                Callback::from(move |_| {
+                                                    let url = repo_url.clone();
+                                                    spawn_local(async move {
+                                                        web_sys::console::log_1(&format!("Delete repo: {}", url).into());
+                                                        yew_helper::call_del_repo(url).await;
+                                                    });
+                                                })
+                                            } class="btn delete-btn">
+                                                { "Delete" }
+                                            </button>
+                                            <button onclick={
+                                                let repo_url = repo_key.clone();
+                                                Callback::from(move |_| {
+                                                    let url = repo_url.clone();
+                                                    spawn_local(async move {
+                                                        web_sys::console::log_1(&format!("Refresh repo: {}", url).into());
+                                                        yew_helper::call_refresh_repo(url).await;
+                                                    });
+                                                })
                                                 } class="btn refresh-btn">
                                                     { "Refresh" }
-                                                </button>
+                                            </button>
                                             </div>
                                         </div>
                                     }
