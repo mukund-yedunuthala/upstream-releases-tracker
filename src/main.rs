@@ -3,7 +3,6 @@ use tracker_libs::RepoData;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 mod yew_helper;
-use yew_helper::call_get_repos;
 
 #[function_component(App)]
 fn app() -> Html {
@@ -11,7 +10,7 @@ fn app() -> Html {
     let loading = use_state(|| false);
     let input_url = use_state(|| "".to_string());
 
-    // Manual fetch repos callback
+    // Async action helpers
     let fetch_repos = {
         let repos = repos.clone();
         let loading = loading.clone();
@@ -20,7 +19,7 @@ fn app() -> Html {
             let loading = loading.clone();
             spawn_local(async move {
                 loading.set(true);
-                match call_get_repos().await {
+                match yew_helper::call_get_repos().await {
                     Ok(data) => repos.set(Some(data)),
                     Err(err) => web_sys::console::error_1(&err.into()),
                 }
@@ -29,7 +28,6 @@ fn app() -> Html {
         })
     };
 
-    // Handle input change
     let on_input_change = {
         let input_url = input_url.clone();
         Callback::from(move |e: InputEvent| {
@@ -39,112 +37,144 @@ fn app() -> Html {
         })
     };
 
-    // Placeholder for adding a new repo URL command
-    let on_add_repo = {
+    let add_repo = {
         let input_url = input_url.clone();
         let repos = repos.clone();
         let loading = loading.clone();
-
         Callback::from(move |_| {
             let url = (*input_url).clone();
             if url.trim().is_empty() {
-                // ignore empty
                 return;
             }
             let repos = repos.clone();
             let loading = loading.clone();
+            let input_url = input_url.clone();
             spawn_local(async move {
                 loading.set(true);
-                // TODO: invoke tauri add_repo command with `url`
-                web_sys::console::log_1(&format!("Add repo URL: {}", url.clone()).into());
+                web_sys::console::log_1(&format!("Add repo URL: {}", url).into());
                 yew_helper::call_add_repo(url.clone()).await;
-                // Clear input after add
-
-                // Optionally refresh all repos after add
-                match call_get_repos().await {
+                match yew_helper::call_get_repos().await {
                     Ok(data) => repos.set(Some(data)),
                     Err(err) => web_sys::console::error_1(&err.into()),
                 }
-
                 loading.set(false);
+                input_url.set(String::new());
             });
-            input_url.set(String::new());
         })
     };
 
     html! {
-        html! {
-            <div class="app-container">
-                <h1>{ "My Repos" }</h1>
-                <div class="input-row">
-                    <input
-                        type="text"
-                        placeholder="Enter repository URL"
-                        value={(*input_url).clone()}
-                        oninput={on_input_change}
-                        class="url-input" />
-                    <button onclick={on_add_repo} disabled={*loading} class="btn add-btn">
-                        { if *loading { "Adding..." } else { "Add Repo" } }
-                    </button>
-                </div>
-
-                <button onclick={fetch_repos.clone()} disabled={*loading} class="btn refresh-btn">
-                    { if *loading { "Loading..." } else { "Refresh All" } }
+        <div class="app-container">
+            <h1>{ "Upstream Releases Tracker" }</h1>
+            <div class="input-row">
+                <input
+                    type="text"
+                    placeholder="Enter repository URL"
+                    value={(*input_url).clone()}
+                    oninput={on_input_change}
+                    class="url-input" />
+                <button onclick={add_repo} disabled={*loading} class="btn add-btn">
+                    { if *loading { "Adding..." } else { "Add Repo" } }
                 </button>
+            </div>
+            <button onclick={fetch_repos.clone()} disabled={*loading} class="btn refresh-btn">
+                { if *loading { "Loading..." } else { "Refresh All" } }
+            </button>
+            { render_repo_list(&repos, &loading) }
+        </div>
+    }
+}
 
-                {
-                    if let Some(repo_map) = &*repos {
-                        html! {
-                            <div class="repos-list">
-                                { for repo_map.iter().map(|(repo_key, repo)| {
-                                    html! {
-                                        <div class="repo-card">
-                                            <div class="repo-info">
-                                                <strong>{ &repo.repo_name }</strong>
-                                                <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
-                                            </div>
-                                            <div class="repo-actions">
-                                            <button onclick={
-                                                let repo_url = repo_key.clone();
-                                                Callback::from(move |_| {
-                                                    let url = repo_url.clone();
-                                                    spawn_local(async move {
-                                                        web_sys::console::log_1(&format!("Delete repo: {}", url).into());
-                                                        yew_helper::call_del_repo(url).await;
-                                                    });
-                                                })
-                                            } class="btn delete-btn">
-                                                { "Delete" }
-                                            </button>
-                                            <button onclick={
-                                                let repo_url = repo_key.clone();
-                                                Callback::from(move |_| {
-                                                    let url = repo_url.clone();
-                                                    spawn_local(async move {
-                                                        web_sys::console::log_1(&format!("Refresh repo: {}", url).into());
-                                                        yew_helper::call_refresh_repo(url).await;
-                                                    });
-                                                })
-                                                } class="btn refresh-btn">
-                                                    { "Refresh" }
-                                            </button>
-                                            </div>
-                                        </div>
-                                    }
-                                })}
-                            </div>
-                        }
-                    } else {
-                        html! {
-                            <p class="empty-message">
-                                { "No repositories loaded. Use the 'Refresh All' button or add repos above." }
-                            </p>
-                        }
-                    }
-                }
+fn render_repo_list(
+    repos: &UseStateHandle<Option<HashMap<String, RepoData>>>,
+    loading: &UseStateHandle<bool>,
+) -> Html {
+    if let Some(repo_map) = &**repos {
+        html! {
+            <div class="repos-list">
+                { for repo_map.iter().map(|(repo_key, repo)| render_repo_card(repo_key, repo, repos, loading)) }
             </div>
         }
+    } else {
+        html! {
+            <p class="empty-message">
+                { "No repositories loaded. Use the 'Refresh All' button or add repos above." }
+            </p>
+        }
+    }
+}
 
+fn render_repo_card(
+    repo_key: &String,
+    repo: &RepoData,
+    repos: &UseStateHandle<Option<HashMap<String, RepoData>>>,
+    loading: &UseStateHandle<bool>,
+) -> Html {
+    let spawn_with_refresh =
+        |action: fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>| {
+            let repo_url = repo_key.clone();
+            let repos = repos.clone();
+            let loading = loading.clone();
+            Callback::from(move |_| {
+                let url = repo_url.clone();
+                let repos = repos.clone();
+                let loading = loading.clone();
+                spawn_local(async move {
+                    loading.set(true);
+                    action(url.clone()).await;
+                    match yew_helper::call_get_repos().await {
+                        Ok(data) => repos.set(Some(data)),
+                        Err(err) => web_sys::console::error_1(&err.into()),
+                    }
+                    loading.set(false);
+                });
+            })
+        };
+
+    html! {
+        <div class="repo-card">
+            <div class="repo-info">
+                <strong>{ &repo.repo_name }</strong>
+                <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
+                <p>{ format!("Latest release: {}", repo.latest_release) }
+                { format!("System version: {}", repo.system_version) }</p>
+                <a href={repo_key.clone()} target="_blank" rel="noopener noreferrer" class="custom-link-class">
+                        { &repo_key }
+                </a>
+            </div>
+            <div class="repo-actions">
+            <button
+                onclick={spawn_with_refresh(|url| Box::pin(async move {
+                    web_sys::console::log_1(&format!("Delete repo: {}", url).into());
+                    yew_helper::call_del_repo(url).await;
+                }))}
+                class="btn delete-btn"
+                disabled={**loading}
+            >
+                { "Delete" }
+            </button>
+            <button
+                onclick={spawn_with_refresh(|url| Box::pin(async move {
+                    web_sys::console::log_1(&format!("Refresh repo: {}", url).into());
+                    yew_helper::call_refresh_repo(url).await;
+                }))}
+                class="btn refresh-btn"
+                disabled={**loading}
+            >
+                { "Refresh" }
+            </button>
+            <button
+                onclick={spawn_with_refresh(|url| Box::pin(async move {
+                    web_sys::console::log_1(&format!("Mark repo as updated: {}", url).into());
+                    yew_helper::call_mark_as_updated(url).await;
+                }))}
+                class="btn update-btn"
+                disabled={**loading}
+            >
+                { "Mark as Updated" }
+            </button>
+            </div>
+        </div>
     }
 }
 

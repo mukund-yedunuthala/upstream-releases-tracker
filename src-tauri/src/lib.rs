@@ -32,7 +32,6 @@ async fn delete_repo(url: String) {
 
 #[tauri::command]
 async fn refresh_repo(url: String) -> Result<String, String> {
-    // Prepare datafile path
     let datafile_path = dirs::data_local_dir()
         .ok_or("Failed to get local data directory")?
         .join(DATAFILE);
@@ -42,11 +41,9 @@ async fn refresh_repo(url: String) -> Result<String, String> {
         .ok_or("Failed to convert datafile path to string")?
         .to_string();
 
-    // Read all repos
     let mut all_repos = AppContentHandler::read_repos(&datafile_path_string)
         .map_err(|e| format!("Failed to fetch all repos: {}", e))?;
 
-    // Find target repo
     let repo = all_repos
         .get(&url)
         .ok_or_else(|| format!("Repo not found: {}", url))?;
@@ -55,12 +52,10 @@ async fn refresh_repo(url: String) -> Result<String, String> {
 
     let git_api_handler = GitHandler {};
 
-    // Call refresh_repo, now fully async
     let result = git_api_handler
         .refresh_repo(&config, repo)
         .await
         .map_err(|e| format!("Failed to refresh repo: {}", e))?;
-    // Writing data
     all_repos.insert(url, result);
     AppContentHandler::write_to_data_file(&datafile_path_string, &all_repos);
 
@@ -69,7 +64,6 @@ async fn refresh_repo(url: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn add_repo(url: String) -> Result<String, String> {
-    // Prepare datafile path
     let datafile_path = dirs::data_local_dir()
         .ok_or("Failed to get local data directory")?
         .join(DATAFILE);
@@ -86,11 +80,9 @@ async fn add_repo(url: String) -> Result<String, String> {
     if helper::is_valid_repo_url(&url) {
         match git_api_handler.post_request(&config, url.clone()).await {
             Ok(new_repo_data) => {
-                // Repository added successfully
                 AppContentHandler::add_repo(&datafile_path_string, url, new_repo_data);
             }
             Err(e) => {
-                // Handle error on adding repository
                 eprintln!("Error adding repository: {}", e);
             }
         }
@@ -99,6 +91,14 @@ async fn add_repo(url: String) -> Result<String, String> {
     }
 
     Ok(format!("Repo added successfully"))
+}
+
+#[tauri::command]
+async fn mark_as_updated(url: String) {
+    let url = url.clone();
+    let datafile_path = dirs::data_local_dir().unwrap().join(DATAFILE);
+    let datafile_path_string = String::from(datafile_path.to_str().unwrap());
+    AppContentHandler::upd_repo_status(&datafile_path_string, &url);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -110,7 +110,8 @@ pub fn run() {
             get_repos,
             add_repo,
             delete_repo,
-            refresh_repo
+            refresh_repo,
+            mark_as_updated,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

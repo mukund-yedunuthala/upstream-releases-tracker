@@ -84,6 +84,12 @@ h1 {
         margin-bottom: 15px;
     }
 
+    .update-btn {
+        background-color: #3178c6;
+        color: white;
+        margin-bottom: 15px;
+    }
+
     .repos-list {
         display: flex;
         flex-direction: column;
@@ -107,6 +113,11 @@ h1 {
     .owner {
         margin: 4px 0 0 0;
         color: #555;
+    }
+
+    .custom-link-class {
+        color: #347d39;
+        text-decoration: none;
     }
 
     .repo-actions {
