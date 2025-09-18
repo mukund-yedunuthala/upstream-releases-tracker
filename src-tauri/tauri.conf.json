@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "upstream-releases-tracker",
+  "productName": "Upstream Releases Tracker",
+  "mainBinaryName": "Upstream Releases Tracker",
   "version": "2.0.0",
   "identifier": "page.mukundyedunuthala.upstream-releases-tracker",
   "build": {
     "beforeDevCommand": "trunk serve",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build",
+    "beforeBuildCommand": "trunk build --release",
     "frontendDist": "../dist"
   },
   "app": {
