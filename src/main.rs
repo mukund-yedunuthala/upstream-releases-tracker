@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracker_libs::RepoData;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
@@ -6,7 +6,7 @@ mod yew_helper;
 
 #[function_component(App)]
 fn app() -> Html {
-    let repos = use_state(|| None::<HashMap<String, RepoData>>);
+    let repos = use_state(|| None::<BTreeMap<String, RepoData>>);
     let loading = use_state(|| false);
     let input_url = use_state(|| "".to_string());
 
@@ -86,7 +86,7 @@ fn app() -> Html {
 }
 
 fn render_repo_list(
-    repos: &UseStateHandle<Option<HashMap<String, RepoData>>>,
+    repos: &UseStateHandle<Option<BTreeMap<String, RepoData>>>,
     loading: &UseStateHandle<bool>,
 ) -> Html {
     if let Some(repo_map) = &**repos {
@@ -107,7 +107,7 @@ fn render_repo_list(
 fn render_repo_card(
     repo_key: &String,
     repo: &RepoData,
-    repos: &UseStateHandle<Option<HashMap<String, RepoData>>>,
+    repos: &UseStateHandle<Option<BTreeMap<String, RepoData>>>,
     loading: &UseStateHandle<bool>,
 ) -> Html {
     let spawn_with_refresh =

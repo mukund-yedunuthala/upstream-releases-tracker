@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde_wasm_bindgen::from_value;
 use serde_wasm_bindgen::to_value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracker_libs::RepoData;
 use wasm_bindgen::prelude::*;
 use web_sys::console;
@@ -15,10 +15,10 @@ extern "C" {
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 }
 
-pub async fn call_get_repos() -> Result<HashMap<String, RepoData>, String> {
+pub async fn call_get_repos() -> Result<BTreeMap<String, RepoData>, String> {
     let js_value = invoke_without_args("get_repos").await;
 
-    match from_value::<HashMap<String, RepoData>>(js_value) {
+    match from_value::<BTreeMap<String, RepoData>>(js_value) {
         Ok(result) => Ok(result),
         Err(e) => {
             let err_msg = format!("Failed to deserialize result: {:?}", e);

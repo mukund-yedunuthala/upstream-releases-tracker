@@ -1,6 +1,6 @@
 use crate::json_handler::JSONHandler;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracker_libs::RepoData;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -8,17 +8,17 @@ pub struct AppContentHandler {}
 impl AppContentHandler {
     pub fn read_repos(
         filepath: &String,
-    ) -> Result<HashMap<String, RepoData>, Box<dyn std::error::Error>> {
+    ) -> Result<BTreeMap<String, RepoData>, Box<dyn std::error::Error>> {
         let fp_clone = filepath.clone();
-        match JSONHandler::read_from_json::<HashMap<String, RepoData>>(fp_clone) {
+        match JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(fp_clone) {
             Ok(repos) => Ok(repos),
             e => e,
         }
     }
 
-    pub fn write_to_data_file(datafilepath: &String, repos: &HashMap<String, RepoData>) {
+    pub fn write_to_data_file(datafilepath: &String, repos: &BTreeMap<String, RepoData>) {
         let fp_clone = datafilepath.clone();
-        match JSONHandler::write_json_file::<HashMap<String, RepoData>>(fp_clone, repos) {
+        match JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(fp_clone, repos) {
             Ok(_) => {}
             Err(e) => eprintln!("Error occurred during repos update: {:?}", e),
         };

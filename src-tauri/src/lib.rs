@@ -4,7 +4,7 @@ mod git_api_handler;
 mod helper;
 mod json_handler;
 use crate::{app_content_handler::AppContentHandler, git_api_handler::GitHandler};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracker_libs::{Config, RepoData};
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 #[tauri::command]
@@ -13,7 +13,7 @@ async fn get_config() -> Result<Config, String> {
 }
 
 #[tauri::command]
-async fn get_repos() -> Result<HashMap<String, RepoData>, String> {
+async fn get_repos() -> Result<BTreeMap<String, RepoData>, String> {
     let datafile_path = dirs::data_local_dir().unwrap().join(DATAFILE);
     let datafile_path_string = String::from(datafile_path.to_str().unwrap());
     match AppContentHandler::read_repos(&datafile_path_string) {
