@@ -136,7 +136,7 @@ fn render_repo_card(
             <div class="repo-info">
                 <strong>{ &repo.repo_name }</strong>
                 <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
-                <p>{ format!("Latest release: {}", repo.latest_release) }
+                <p>{ format!("Latest release: {} | ", repo.latest_release) }
                 { format!("System version: {}", repo.system_version) }</p>
                 <a href={repo_key.clone()} target="_blank" rel="noopener noreferrer" class="custom-link-class">
                         { &repo_key }

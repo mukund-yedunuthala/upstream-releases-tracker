@@ -6,7 +6,7 @@ mod json_handler;
 use crate::{app_content_handler::AppContentHandler, git_api_handler::GitHandler};
 use std::collections::HashMap;
 use tracker_libs::{Config, RepoData};
-static DATAFILE: &str = "upstream-releases-tracker/data/repos-copy.json";
+static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 #[tauri::command]
 async fn get_config() -> Result<Config, String> {
     Ok(helper::read_config())

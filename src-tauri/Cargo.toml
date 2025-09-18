@@ -1,9 +1,12 @@
 [package]
-name = "upstream-releases-tracker-v2"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+name = "upstream-releases-tracker-lib"
+version = "2.0.0"
+description = "Track releases from upstream repositories of projects"
+authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs"
+homepage = "https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
