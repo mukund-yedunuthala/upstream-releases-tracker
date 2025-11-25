@@ -136,8 +136,29 @@ fn render_repo_card(
             <div class="repo-info">
                 <strong>{ &repo.repo_name }</strong>
                 <p class="owner">{ format!("Owner: {}", &repo.owner) }</p>
-                <p>{ format!("Latest release: {} | ", repo.latest_release) }
-                { format!("System version: {}", repo.system_version) }</p>
+                <p class="status-indicator">
+                    { "Status: " }
+                    {
+                        if repo.latest_release == repo.system_version {
+                            // This block executes if the versions are identical
+                            html! { 
+                                <span class="up-to-date">
+                                    { "Up to Date. | " }
+                                    { format!("System: {}", repo.system_version) }
+                                </span>
+                            }
+                        } else {
+                            // This block executes if the versions differ
+                            html! { 
+                                <span class="update-required">
+                                    { "Update Required. | " }
+                                    { format!("Latest: {} | ", repo.latest_release) }
+                                    { format!("System: {}", repo.system_version) }
+                                </span>
+                            }
+                        }
+                    }
+                </p>
                 <a href={repo_key.clone()} target="_blank" rel="noopener noreferrer" class="custom-link-class">
                         { &repo_key }
                 </a>
