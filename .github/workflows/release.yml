@@ -27,12 +27,12 @@ jobs:
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v__VERSION__
-          releaseName: 'App v__VERSION__'
+          tagName: v__VERSION__
+          releaseName: 'Upstream Releases Tracker v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: true
