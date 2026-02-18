@@ -26,7 +26,6 @@ tauri-plugin-opener = "^2"
 serde = { version = "^1.0.219", features = ["derive"] }
 serde_json = "^1.0.140"
 dirs = "^6.0.0"
-expanduser = "^1.2.2"
 reqwest = { version = "^0.12.23", features = ["blocking", "json"] }
 regex = "^1.11.1"
 tracker_libs = { path = "../tracker_libs" }
