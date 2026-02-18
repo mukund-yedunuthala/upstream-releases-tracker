@@ -5,9 +5,9 @@
   "version": "3.0.0",
   "identifier": "page.mukundyedunuthala.upstream-releases-tracker",
   "build": {
-    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeDevCommand": "npm --prefix ../frontend run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "cd ../frontend && npm run build",
+    "beforeBuildCommand": "npm --prefix ../frontend run build",
     "frontendDist": "../frontend/dist"
   },
   "app": {

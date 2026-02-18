@@ -21,7 +21,7 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: install frontend dependencies
-        run: npm install -D vite
+        run: npm install --prefix frontend
 
       - uses: tauri-apps/tauri-action@v0
         env:
