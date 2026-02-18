@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Upstream Releases Tracker</title>
+
+        <!-- Oat CSS -->
+        <link rel="stylesheet" href="./oat.min.css" />
+
+        <!-- App styles -->
+        <link rel="stylesheet" href="./style.css" />
+    </head>
+    <body>
+        <main class="container">
+            <!-- Top bar -->
+            <header id="topbar">
+                <h2>Upstream Releases Tracker</h2>
+                <div id="topbar-actions">
+                    <fieldset class="group">
+                        <input
+                            type="url"
+                            id="repo-url-input"
+                            placeholder="https://github.com/owner/repo"
+                        />
+                        <button id="add-repo-btn">Add repo</button>
+                    </fieldset>
+                    <button
+                        class="outline"
+                        id="refresh-all-btn"
+                        title="Refresh all repos"
+                    >
+                        Refresh all
+                    </button>
+                </div>
+            </header>
+
+            <!-- Cards grid -->
+            <section id="repo-grid">
+                <!-- Cards rendered by app.js -->
+            </section>
+        </main>
+
+        <!-- Edit dialog -->
+        <dialog id="edit-dialog" closedby="any">
+            <form method="dialog">
+                <header>
+                    <h3>Edit repository</h3>
+                </header>
+                <div>
+                    <label data-field>
+                        Repository URL
+                        <input
+                            type="url"
+                            id="edit-url-input"
+                            placeholder="https://github.com/owner/repo"
+                        />
+                    </label>
+                </div>
+                <footer>
+                    <button
+                        type="button"
+                        commandfor="edit-dialog"
+                        command="close"
+                        class="outline"
+                    >
+                        Cancel
+                    </button>
+                    <button value="save" id="edit-save-btn">Save</button>
+                </footer>
+            </form>
+        </dialog>
+
+        <!-- Oat JS + Tauri + App -->
+        <script type="module" src="./oat.min.js" defer></script>
+        <script type="module" src="./app.js" defer></script>
+    </body>
+</html>

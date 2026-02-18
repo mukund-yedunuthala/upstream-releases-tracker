@@ -5,71 +5,68 @@ use tracker_libs::RepoData;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AppContentHandler {}
+
 impl AppContentHandler {
     pub fn read_repos(
-        filepath: &String,
+        filepath: &str,
     ) -> Result<BTreeMap<String, RepoData>, Box<dyn std::error::Error>> {
-        let fp_clone = filepath.clone();
-        match JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(fp_clone) {
-            Ok(repos) => Ok(repos),
-            e => e,
-        }
+        JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(filepath.to_string())
     }
 
-    pub fn write_to_data_file(datafilepath: &String, repos: &BTreeMap<String, RepoData>) {
-        let fp_clone = datafilepath.clone();
-        match JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(fp_clone, repos) {
-            Ok(_) => {}
-            Err(e) => eprintln!("Error occurred during repos update: {:?}", e),
-        };
+    pub fn write_to_data_file(
+        datafilepath: &str,
+        repos: &BTreeMap<String, RepoData>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(datafilepath.to_string(), repos)
     }
 
-    pub fn add_repo(datafilepath: &String, url: String, new_repo_data: RepoData) {
-        match AppContentHandler::read_repos(datafilepath) {
-            Ok(mut repos) => {
-                repos.entry(url).or_insert(new_repo_data);
-                AppContentHandler::write_to_data_file(datafilepath, &repos);
-            }
-            Err(e) => eprintln!("Error occured while adding new repo: {}", e),
-        }
+    pub fn add_repo(
+        datafilepath: &str,
+        url: String,
+        new_repo_data: RepoData,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut repos = Self::read_repos(datafilepath)?;
+        repos.insert(url, new_repo_data);
+        Self::write_to_data_file(datafilepath, &repos)
     }
 
-    pub fn del_repo(datafilepath: &String, url: &String) {
-        match AppContentHandler::read_repos(datafilepath) {
-            Ok(mut repos) => {
-                repos.remove(url);
-                AppContentHandler::write_to_data_file(datafilepath, &repos);
-            }
-            Err(e) => eprintln!("Error occured while deleting the repo: {}", e),
-        }
-    }
-    pub fn upd_repo(datafilepath: &String, new_data: RepoData, url: &String) {
-        let url_clone = url.clone();
-        match AppContentHandler::read_repos(datafilepath) {
-            Ok(mut repos) => {
-                repos.insert(url_clone, new_data).unwrap();
-                AppContentHandler::write_to_data_file(datafilepath, &repos);
-            }
-            Err(e) => eprintln!("Error occured while updating the repo: {}", e),
-        }
+    pub fn del_repo(
+        datafilepath: &str,
+        url: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut repos = Self::read_repos(datafilepath)?;
+        repos.remove(url);
+        Self::write_to_data_file(datafilepath, &repos)
     }
 
-    pub fn upd_repo_status(datafilepath: &String, url: &String) {
-        match AppContentHandler::read_repos(datafilepath) {
-            Ok(repos) => match repos.get(url) {
-                Some(old_data) => {
-                    let new_data: RepoData = RepoData {
-                        owner: old_data.owner.clone(),
-                        repo_name: old_data.repo_name.clone(),
-                        latest_release: old_data.latest_release.clone(),
-                        system_version: old_data.latest_release.clone(),
-                        notes: old_data.notes.clone(),
-                    };
-                    AppContentHandler::upd_repo(datafilepath, new_data, url);
-                }
-                _ => eprintln!("Something went wrong in updating"),
-            },
-            Err(e) => eprintln!("Error occured while deleting the repo: {}", e),
+    pub fn upd_repo(
+        datafilepath: &str,
+        new_data: RepoData,
+        url: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut repos = Self::read_repos(datafilepath)?;
+        repos.insert(url.to_string(), new_data);
+        Self::write_to_data_file(datafilepath, &repos)
+    }
+
+    pub fn upd_repo_status(
+        datafilepath: &str,
+        url: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let repos = Self::read_repos(datafilepath)?;
+
+        if let Some(old_data) = repos.get(url) {
+            let new_data = RepoData {
+                owner: old_data.owner.clone(),
+                repo_name: old_data.repo_name.clone(),
+                latest_release: old_data.latest_release.clone(),
+                system_version: old_data.latest_release.clone(),
+                notes: old_data.notes.clone(),
+            };
+            Self::upd_repo(datafilepath, new_data, url)?;
+            Ok(())
+        } else {
+            Err(format!("Repo not found while updating status: {}", url).into())
         }
     }
 }

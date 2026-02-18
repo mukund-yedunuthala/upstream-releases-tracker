@@ -1,18 +1,15 @@
 [package]
 name = "upstream-releases-tracker"
-version = "2.0.3"
+version = "3.0.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-yew = { version = "^0.21", features = ["csr"] }
-wasm-bindgen = "^0.2"
-wasm-bindgen-futures = "^0.4"
 web-sys = { version = "^0.3", features = ["Window"] }
 js-sys = "^0.3"
 serde = { version = "^1", features = ["derive"] }
-serde-wasm-bindgen = "^0.6"
 console_error_panic_hook = "^0.1.7"
+toml = "=0.8.23"
 tracker_libs = { path = "./tracker_libs" }
 
 [workspace]
