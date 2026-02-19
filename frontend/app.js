@@ -23,8 +23,8 @@ function buildCard(url, data) {
   const shortUrl = url.replace(/^https?:\/\//, "");
   const title = data.owner + "/" + data.repo_name;
   const name = title || shortUrl;
-  const latest = data.latest_release || data.latest_version || "—";
-  const system = data.system_version || data.system_version || "—";
+  const latest = data.latest_release || "—";
+  const system = data.system_version || "—";
 
   const card = document.createElement("article");
   card.className = "card repo-card";
@@ -47,55 +47,61 @@ function buildCard(url, data) {
       <code>${system}</code>
     </div>
     <footer class="repo-card-actions">
-      <button class="small outline" title="Refresh" data-action="refresh">
-        Refresh
-      </button>
-      <button class="small outline" data-action="mark-updated">
-        Mark as updated
-      </button>
-      <button class="small outline" data-action="edit">
-        Edit
-      </button>
-      <ot-dropdown>
-        <button class="small outline" data-variant="danger" popovertarget="del-${id}">
-          Delete
-        </button>
-        <article class="card" popover id="del-${id}">
-          <header>
-            <h4>Delete repo?</h4>
-            <p>This cannot be undone.</p>
-          </header>
-          <br />
-          <footer>
-            <button class="outline small" popovertarget="del-${id}">Cancel</button>
-            <button data-variant="danger" class="small"
-              data-action="confirm-delete" data-url="${url}" data-popover="del-${id}">
-              Confirm delete
-            </button>
-          </footer>
-        </article>
-      </ot-dropdown>
+      <button class="small outline" data-action="refresh">Refresh</button>
+      <button class="small outline" data-action="mark-updated">Mark as updated</button>
+      <button class="small outline" data-action="edit">Edit</button>
+      <button class="small outline" data-variant="danger" data-action="delete-trigger">Delete</button>
+      <article class="card delete-popover" hidden>
+        <header>
+          <h4>Delete repo?</h4>
+          <p>This cannot be undone.</p>
+        </header>
+        <br />
+        <footer>
+          <button class="outline small" data-action="delete-cancel">Cancel</button>
+          <button data-variant="danger" class="small" data-action="confirm-delete">Confirm delete</button>
+        </footer>
+      </article>
     </footer>
   `;
 
-  // Wire per-card actions
-  const refreshBtn = card.querySelector('button[data-action="refresh"]');
-  refreshBtn.addEventListener("click", () => handleRefresh(refreshBtn, url));
+  // Refresh
+  card
+    .querySelector('[data-action="refresh"]')
+    .addEventListener("click", (e) => handleRefresh(e.currentTarget, url));
 
-  const editBtn = card.querySelector('button[data-action="edit"]');
-  editBtn.addEventListener("click", () => openEditDialog(url, name));
+  // Mark as updated
+  card
+    .querySelector('[data-action="mark-updated"]')
+    .addEventListener("click", () => handleMarkAsUpdated(url));
 
-  const confirmDeleteBtn = card.querySelector(
-    'button[data-action="confirm-delete"]',
-  );
-  confirmDeleteBtn.addEventListener("click", () =>
-    handleDelete(url, confirmDeleteBtn.dataset.popover),
-  );
+  // Edit
+  card
+    .querySelector('[data-action="edit"]')
+    .addEventListener("click", () => openEditDialog(url, name));
 
-  const markUpdatedBtn = card.querySelector(
-    'button[data-action="mark-updated"]',
-  );
-  markUpdatedBtn.addEventListener("click", () => handleMarkAsUpdated(url));
+  // Delete trigger: show the inline popover
+  const deletePopover = card.querySelector(".delete-popover");
+  card
+    .querySelector('[data-action="delete-trigger"]')
+    .addEventListener("click", () => {
+      deletePopover.hidden = false;
+    });
+
+  // Cancel: hide it again
+  card
+    .querySelector('[data-action="delete-cancel"]')
+    .addEventListener("click", () => {
+      deletePopover.hidden = true;
+    });
+
+  // Confirm delete
+  card
+    .querySelector('[data-action="confirm-delete"]')
+    .addEventListener("click", () => {
+      deletePopover.hidden = true;
+      handleDelete(url);
+    });
 
   return card;
 }
@@ -181,12 +187,7 @@ refreshAllBtn.addEventListener("click", async () => {
   }
 });
 
-// Delete repo
-async function handleDelete(url, popoverId) {
-  const popover = document.getElementById(popoverId);
-  if (popover && popover.hidePopover) {
-    popover.hidePopover();
-  }
+async function handleDelete(url) {
   try {
     await invoke("delete_repo", { url });
     document.querySelector(`[data-url="${url}"]`)?.remove();
