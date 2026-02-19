@@ -54,14 +54,41 @@
     min-width: 0;
 }
 
+/* The input group: select + url input + button fused together */
 #topbar-actions .group {
     flex: 1;
-    max-width: 560px;
+    max-width: 640px;
     margin: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+/* Host select inside the group sits flush left */
+#topbar-actions .group select {
+    flex-shrink: 0;
+    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    border-radius: var(--radius) 0 0 var(--radius);
+    padding: 0 var(--sm);
+    font-size: var(--font-body);
+    cursor: pointer;
+    /* Prevent the select from being too wide */
+    max-width: 120px;
+}
+
+#topbar-actions .group input {
+    flex: 1;
+    min-width: 0;
+    border-radius: 0;
+}
+
+#topbar-actions .group button {
+    flex-shrink: 0;
+    border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 #refresh-all-btn {
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* ── Cards grid ── */
@@ -82,7 +109,6 @@
     flex-direction: column;
     gap: var(--md);
     box-sizing: border-box;
-    /* Force GPU layer promotion upfront — eliminates flicker on hover */
     will-change: transform;
     transform: translateY(0);
     transition:
@@ -96,6 +122,7 @@
     box-shadow: 0 8px 32px color-mix(in srgb, currentColor 15%, transparent);
 }
 
+/* Card header: title + badge row, then url + host badge row */
 .repo-card-title {
     display: flex;
     align-items: flex-start;
@@ -108,6 +135,27 @@
     font-size: 1.125rem;
     font-weight: 600;
     line-height: 1.25;
+}
+
+/* Host + URL row sits directly under the title */
+.repo-card-subtitle {
+    display: flex;
+    align-items: center;
+    gap: var(--sm);
+    flex-wrap: wrap;
+}
+
+/* Small pill showing the forge host */
+.host-badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.1rem var(--sm);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    white-space: nowrap;
+    opacity: 0.85;
+    flex-shrink: 0;
 }
 
 .repo-url {
@@ -123,6 +171,7 @@
     text-decoration: underline;
 }
 
+/* ── Card meta rows (latest release / installed version) ── */
 .repo-card-meta {
     display: flex;
     align-items: center;
@@ -132,6 +181,12 @@
     opacity: 0.75;
     border-top: 1px solid color-mix(in srgb, currentColor 6%, transparent);
     border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+}
+
+/* Collapse double borders between two consecutive meta rows */
+.repo-card-meta + .repo-card-meta {
+    border-top: none;
+    padding-top: 0;
 }
 
 .repo-card-meta code {
@@ -159,6 +214,40 @@
     min-height: 2rem;
 }
 
+/* ── Inline delete confirm ── */
+.delete-popover {
+    margin-top: var(--xs);
+    border-radius: var(--radius);
+    padding: var(--md);
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.delete-popover footer {
+    display: flex;
+    gap: var(--sm);
+    justify-content: flex-end;
+}
+
+/* ── Edit dialog internals ── */
+#edit-dialog form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md);
+    min-width: 420px;
+}
+
+#edit-dialog header {
+    margin-bottom: 0;
+}
+
+#edit-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sm);
+    padding-top: var(--sm);
+    border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .container {
@@ -172,7 +261,25 @@
     }
 
     #topbar-actions {
+        flex-direction: column;
+        align-items: stretch;
         justify-content: stretch;
+    }
+
+    #topbar-actions .group {
+        max-width: 100%;
+    }
+
+    #topbar-actions .group select {
+        max-width: 100px;
+    }
+
+    #refresh-all-btn {
+        width: 100%;
+    }
+
+    .repo-card {
+        padding: var(--md) var(--lg);
     }
 
     .repo-card-title {
@@ -180,17 +287,9 @@
         align-items: flex-start;
         gap: var(--xs);
     }
-}
 
-.delete-popover {
-    margin-top: var(--xs);
-    border-radius: var(--radius);
-    padding: var(--md);
-    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-}
-
-.delete-popover footer {
-    display: flex;
-    gap: var(--sm);
-    justify-content: flex-end;
+    #edit-dialog form {
+        min-width: unset;
+        width: 90vw;
+    }
 }

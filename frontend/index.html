@@ -18,10 +18,15 @@
                 <h2>Upstream Releases Tracker</h2>
                 <div id="topbar-actions">
                     <fieldset class="group">
+                        <select id="repo-host-select">
+                            <option value="github.com">GitHub</option>
+                            <option value="gitlab.com">GitLab</option>
+                            <option value="forgejo">Forgejo</option>
+                        </select>
                         <input
                             type="url"
                             id="repo-url-input"
-                            placeholder="https://github.com/owner/repo"
+                            placeholder="https://host.example.com/owner/repo"
                         />
                         <button id="add-repo-btn">Add repo</button>
                     </fieldset>
@@ -49,11 +54,19 @@
                 </header>
                 <div>
                     <label data-field>
+                        Host
+                        <select id="edit-host-select">
+                            <option value="github.com">GitHub</option>
+                            <option value="gitlab.com">GitLab</option>
+                            <option value="forgejo">Forgejo</option>
+                        </select>
+                    </label>
+                    <label data-field>
                         Repository URL
                         <input
                             type="url"
                             id="edit-url-input"
-                            placeholder="https://github.com/owner/repo"
+                            placeholder="https://host.example.com/owner/repo"
                         />
                     </label>
                 </div>
