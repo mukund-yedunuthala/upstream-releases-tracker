@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // State
 let editingUrl = null;
+let editingHost = null;
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -10,6 +11,8 @@ const addBtn = document.getElementById("add-repo-btn");
 const refreshAllBtn = document.getElementById("refresh-all-btn");
 const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
+const hostSelect = document.getElementById("repo-host-select");
+const editHostSelect = document.getElementById("edit-host-select");
 
 // Build a card from RepoData
 function buildCard(url, data) {
@@ -36,7 +39,10 @@ function buildCard(url, data) {
         <strong>${name}</strong>
         <span class="badge ${badgeClass}">${badgeText}</span>
       </div>
-      <a href="${url}" class="repo-url">${shortUrl}</a>
+      <div class="repo-card-subtitle">
+        <span class="host-badge">${data.host || "github.com"}</span>
+        <a href="${url}" class="repo-url">${shortUrl}</a>
+      </div>
     </header>
     <div class="repo-card-meta">
       <span>Latest release</span>
@@ -78,7 +84,7 @@ function buildCard(url, data) {
   // Edit
   card
     .querySelector('[data-action="edit"]')
-    .addEventListener("click", () => openEditDialog(url, name));
+    .addEventListener("click", () => openEditDialog(url, name, data.host));
 
   // Delete trigger: show the inline popover
   const deletePopover = card.querySelector(".delete-popover");
@@ -106,6 +112,7 @@ function buildCard(url, data) {
   return card;
 }
 
+// Handle update
 async function handleMarkAsUpdated(url) {
   try {
     await invoke("mark_as_updated", { url });
@@ -132,11 +139,27 @@ async function loadRepos() {
 // Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
-  if (!url) return;
+  const host = hostSelect.value;
+
+  if (!url) {
+    ot.toast("Please enter a repository URL", "Missing URL", {
+      variant: "warning",
+    });
+    return;
+  }
+
+  if (!isValidRepoUrl(url)) {
+    ot.toast(
+      "URL must be in the format https://host.com/owner/repo",
+      "Invalid URL",
+      { variant: "danger" },
+    );
+    return;
+  }
 
   addBtn.disabled = true;
   try {
-    await invoke("add_repo", { url });
+    await invoke("add_repo", { url, host });
     ot.toast("Repository added", "Done", { variant: "success" });
     urlInput.value = "";
     await loadRepos();
@@ -187,6 +210,7 @@ refreshAllBtn.addEventListener("click", async () => {
   }
 });
 
+// Delete repo
 async function handleDelete(url) {
   try {
     await invoke("delete_repo", { url });
@@ -198,36 +222,57 @@ async function handleDelete(url) {
 }
 
 // Edit dialog open
-function openEditDialog(url) {
+function openEditDialog(url, name, host) {
   editingUrl = url;
+  editingHost = host;
   editUrlInput.value = url;
+  editHostSelect.value = host;
   editDialog.showModal();
 }
 
-// Edit dialog save
+// Edit dialog
 editDialog.addEventListener("close", async () => {
   if (editDialog.returnValue !== "save") {
     editingUrl = null;
     return;
   }
+
   const newUrl = editUrlInput.value.trim();
+
   if (!editingUrl || !newUrl || newUrl === editingUrl) {
     editingUrl = null;
     return;
   }
 
+  if (!isValidRepoUrl(newUrl)) {
+    ot.toast(
+      "URL must be in the format https://host.com/owner/repo",
+      "Invalid URL",
+      { variant: "danger" },
+    );
+    editingUrl = null;
+    return;
+  }
+
   try {
-    // simplistic edit: delete + add with new URL
     await invoke("delete_repo", { url: editingUrl });
-    await invoke("add_repo", { url: newUrl });
+    await invoke("add_repo", { url: newUrl, host: editingHost });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Update failed", { variant: "danger" });
   } finally {
     editingUrl = null;
+    editingHost = null;
   }
 });
+
+// Mirrors helper.rs is_valid_repo_url — any HTTPS URL with owner/repo segments.
+function isValidRepoUrl(url) {
+  return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
+    url,
+  );
+}
 
 // Initial load
 loadRepos();
