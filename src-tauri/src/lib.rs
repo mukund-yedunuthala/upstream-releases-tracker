@@ -3,6 +3,7 @@ mod config_handler;
 mod git_api_handler;
 mod helper;
 mod json_handler;
+mod migration;
 
 use crate::{app_content_handler::AppContentHandler, git_api_handler::GitHandler};
 use std::collections::BTreeMap;
@@ -29,8 +30,7 @@ fn datafile_path_string() -> Result<String, String> {
 
 #[tauri::command]
 async fn get_config() -> Result<Config, String> {
-    // If read_config itself can fail, change its return type accordingly and propagate here.
-    Ok(helper::read_config())
+    helper::read_config()
 }
 
 #[tauri::command]
@@ -58,7 +58,7 @@ async fn refresh_repo(url: String) -> Result<String, String> {
         .get(&url)
         .ok_or_else(|| format!("Repo not found: {}", url))?;
 
-    let config = helper::read_config();
+    let config = helper::read_config()?;  // now propagates
     let git_api_handler = GitHandler {};
 
     let result = git_api_handler
@@ -75,17 +75,14 @@ async fn refresh_repo(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn add_repo(url: String) -> Result<String, String> {
+async fn add_repo(url: String, host: String) -> Result<String, String> {
     let datafile_path_string = datafile_path_string()?;
-    let config = helper::read_config();
+
+    let config = helper::read_config()?;
     let git_api_handler = GitHandler {};
 
-    if !helper::is_valid_repo_url(&url) {
-        return Err(format!("Invalid repo URL: {}", url));
-    }
-
     let new_repo_data = git_api_handler
-        .post_request(&config, url.clone())
+        .post_request(&config, url.clone(), host)
         .await
         .map_err(|e| format!("Error adding repository: {}", e))?;
 
@@ -104,6 +101,9 @@ async fn mark_as_updated(url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Ok(path) = datafile_path_string() {
+            migration::run_migrations(&path);
+        }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

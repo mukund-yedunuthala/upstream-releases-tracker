@@ -24,7 +24,7 @@ impl AppContentHandler {
         if !path.exists() {
             return Ok(BTreeMap::new());
         }
-        JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(filepath.to_string())
+        JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(filepath)
     }
 
     pub fn write_to_data_file(
@@ -33,7 +33,7 @@ impl AppContentHandler {
     ) -> Result<(), Box<dyn std::error::Error>> {
         Self::ensure_dir(datafilepath)?;
         JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(
-            datafilepath.to_string(),
+            datafilepath,
             repos,
         )
     }
@@ -79,7 +79,7 @@ impl AppContentHandler {
                 repo_name: old_data.repo_name.clone(),
                 latest_release: old_data.latest_release.clone(),
                 system_version: old_data.latest_release.clone(),
-                notes: old_data.notes.clone(),
+                host: old_data.host.clone(),
             };
             Self::upd_repo(datafilepath, new_data, url)?;
         } else {
