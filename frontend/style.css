@@ -82,7 +82,12 @@
     flex-direction: column;
     gap: var(--md);
     box-sizing: border-box;
-    transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Force GPU layer promotion upfront — eliminates flicker on hover */
+    will-change: transform;
+    transform: translateY(0);
+    transition:
+        transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1);
     border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
 }
 
@@ -175,4 +180,17 @@
         align-items: flex-start;
         gap: var(--xs);
     }
+}
+
+.delete-popover {
+    margin-top: var(--xs);
+    border-radius: var(--radius);
+    padding: var(--md);
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.delete-popover footer {
+    display: flex;
+    gap: var(--sm);
+    justify-content: flex-end;
 }
