@@ -11,12 +11,20 @@ use tracker_libs::{Config, RepoData};
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 
 fn datafile_path_string() -> Result<String, String> {
-    let data_dir = dirs::data_local_dir().ok_or("Failed to get local data directory")?;
+    let data_dir = dirs::data_local_dir()
+        .ok_or("Failed to get local data directory")?;
+
     let datafile_path = data_dir.join(DATAFILE);
-    let s = datafile_path
+
+    if let Some(parent) = datafile_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create data directory: {}", e))?;
+    }
+
+    Ok(datafile_path
         .to_str()
-        .ok_or("Failed to convert datafile path to string")?;
-    Ok(s.to_string())
+        .ok_or("Failed to convert datafile path to string")
+        .map(|s| s.to_string())?)
 }
 
 #[tauri::command]

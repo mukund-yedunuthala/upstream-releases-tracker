@@ -1,15 +1,29 @@
 use crate::json_handler::JSONHandler;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use tracker_libs::RepoData;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AppContentHandler {}
 
 impl AppContentHandler {
+    fn ensure_dir(filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = Path::new(filepath);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        Ok(())
+    }
+
     pub fn read_repos(
         filepath: &str,
     ) -> Result<BTreeMap<String, RepoData>, Box<dyn std::error::Error>> {
+        let path = Path::new(filepath);
+        if !path.exists() {
+            return Ok(BTreeMap::new());
+        }
         JSONHandler::read_from_json::<BTreeMap<String, RepoData>>(filepath.to_string())
     }
 
@@ -17,7 +31,11 @@ impl AppContentHandler {
         datafilepath: &str,
         repos: &BTreeMap<String, RepoData>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(datafilepath.to_string(), repos)
+        Self::ensure_dir(datafilepath)?;
+        JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(
+            datafilepath.to_string(),
+            repos,
+        )
     }
 
     pub fn add_repo(
@@ -64,9 +82,10 @@ impl AppContentHandler {
                 notes: old_data.notes.clone(),
             };
             Self::upd_repo(datafilepath, new_data, url)?;
-            Ok(())
         } else {
-            Err(format!("Repo not found while updating status: {}", url).into())
+            return Err(format!("Repo not found while updating status: {}", url).into());
         }
+
+        Ok(())
     }
 }
