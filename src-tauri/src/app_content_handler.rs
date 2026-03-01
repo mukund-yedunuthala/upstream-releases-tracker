@@ -32,10 +32,7 @@ impl AppContentHandler {
         repos: &BTreeMap<String, RepoData>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Self::ensure_dir(datafilepath)?;
-        JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(
-            datafilepath,
-            repos,
-        )
+        JSONHandler::write_json_file::<BTreeMap<String, RepoData>>(datafilepath, repos)
     }
 
     pub fn add_repo(
@@ -48,10 +45,7 @@ impl AppContentHandler {
         Self::write_to_data_file(datafilepath, &repos)
     }
 
-    pub fn del_repo(
-        datafilepath: &str,
-        url: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn del_repo(datafilepath: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut repos = Self::read_repos(datafilepath)?;
         repos.remove(url);
         Self::write_to_data_file(datafilepath, &repos)
@@ -77,9 +71,10 @@ impl AppContentHandler {
             let new_data = RepoData {
                 owner: old_data.owner.clone(),
                 repo_name: old_data.repo_name.clone(),
+                host_url: old_data.host_url.clone(),
+                host_kind: old_data.host_kind.clone(),
                 latest_release: old_data.latest_release.clone(),
-                system_version: old_data.latest_release.clone(),
-                host: old_data.host.clone(),
+                system_version: old_data.latest_release.clone(), // intentional: marks as up to date
             };
             Self::upd_repo(datafilepath, new_data, url)?;
         } else {
