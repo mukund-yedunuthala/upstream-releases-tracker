@@ -54,36 +54,44 @@
     min-width: 0;
 }
 
-/* The input group: select + url input + button fused together */
+/* Three-part fused input group: [select][input][button] */
 #topbar-actions .group {
     flex: 1;
-    max-width: 640px;
+    max-width: 680px;
     margin: 0;
     display: flex;
     align-items: stretch;
+    /* Oat's .group sets overflow hidden + border-radius — we reinforce it */
+    overflow: hidden;
 }
 
-/* Host select inside the group sits flush left */
-#topbar-actions .group select {
+/* Host select: flush left segment */
+#repo-host-select {
     flex-shrink: 0;
-    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    border-radius: var(--radius) 0 0 var(--radius);
+    width: 120px;
     padding: 0 var(--sm);
-    font-size: var(--font-body);
+    font-size: 0.875rem;
+    font-weight: 500;
     cursor: pointer;
-    /* Prevent the select from being too wide */
-    max-width: 120px;
+    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    /* Override any Oat radius on this element — it sits inside the group */
+    border-radius: 0;
+    appearance: auto;
 }
 
-#topbar-actions .group input {
+/* URL input: stretches to fill remaining space */
+#topbar-actions .group input[type="url"] {
     flex: 1;
     min-width: 0;
     border-radius: 0;
+    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
-#topbar-actions .group button {
+/* Add button: flush right segment */
+#add-repo-btn {
     flex-shrink: 0;
-    border-radius: 0 var(--radius) var(--radius) 0;
+    border-radius: 0;
+    white-space: nowrap;
 }
 
 #refresh-all-btn {
@@ -122,7 +130,6 @@
     box-shadow: 0 8px 32px color-mix(in srgb, currentColor 15%, transparent);
 }
 
-/* Card header: title + badge row, then url + host badge row */
 .repo-card-title {
     display: flex;
     align-items: flex-start;
@@ -137,7 +144,7 @@
     line-height: 1.25;
 }
 
-/* Host + URL row sits directly under the title */
+/* Host badge + URL row */
 .repo-card-subtitle {
     display: flex;
     align-items: center;
@@ -145,22 +152,51 @@
     flex-wrap: wrap;
 }
 
-/* Small pill showing the forge host */
+/* ── Host badge base ── */
 .host-badge {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 0.1rem var(--sm);
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.15rem var(--sm);
     border-radius: var(--radius-sm);
-    background: color-mix(in srgb, currentColor 10%, transparent);
-    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     white-space: nowrap;
-    opacity: 0.85;
     flex-shrink: 0;
+    opacity: 0.9;
+}
+
+/* GitHub — subtle blue-grey */
+.host-badge--github {
+    background: color-mix(in srgb, #4493f8 14%, transparent);
+    border: 1px solid color-mix(in srgb, #4493f8 30%, transparent);
+    color: #4493f8;
+}
+
+/* GitLab — orange */
+.host-badge--gitlab {
+    background: color-mix(in srgb, #fc6d26 14%, transparent);
+    border: 1px solid color-mix(in srgb, #fc6d26 30%, transparent);
+    color: #fc6d26;
+}
+
+/* Gitea / Forgejo — teal */
+.host-badge--forgejo {
+    background: color-mix(in srgb, #609926 14%, transparent);
+    border: 1px solid color-mix(in srgb, #609926 30%, transparent);
+    color: #78bc34;
+}
+
+/* Unknown fallback */
+.host-badge--unknown {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
 .repo-url {
     font-size: var(--font-muted);
-    opacity: 0.65;
+    opacity: 0.6;
     word-break: break-all;
     color: inherit;
     text-decoration: none;
@@ -171,7 +207,7 @@
     text-decoration: underline;
 }
 
-/* ── Card meta rows (latest release / installed version) ── */
+/* ── Card meta rows ── */
 .repo-card-meta {
     display: flex;
     align-items: center;
@@ -183,7 +219,7 @@
     border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
 }
 
-/* Collapse double borders between two consecutive meta rows */
+/* Collapse the double border between consecutive meta rows */
 .repo-card-meta + .repo-card-meta {
     border-top: none;
     padding-top: 0;
@@ -228,7 +264,7 @@
     justify-content: flex-end;
 }
 
-/* ── Edit dialog internals ── */
+/* ── Edit dialog ── */
 #edit-dialog form {
     display: flex;
     flex-direction: column;
@@ -263,15 +299,15 @@
     #topbar-actions {
         flex-direction: column;
         align-items: stretch;
-        justify-content: stretch;
+        gap: var(--sm);
     }
 
     #topbar-actions .group {
         max-width: 100%;
     }
 
-    #topbar-actions .group select {
-        max-width: 100px;
+    #repo-host-select {
+        width: 120px;
     }
 
     #refresh-all-btn {
