@@ -7,13 +7,12 @@ mod migration;
 
 use crate::{app_content_handler::AppContentHandler, git_api_handler::GitHandler};
 use std::collections::BTreeMap;
-use tracker_libs::{Config, RepoData};
 
+use tracker_libs::{Config, ForgeKind, RepoData};
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 
 fn datafile_path_string() -> Result<String, String> {
-    let data_dir = dirs::data_local_dir()
-        .ok_or("Failed to get local data directory")?;
+    let data_dir = dirs::data_local_dir().ok_or("Failed to get local data directory")?;
 
     let datafile_path = data_dir.join(DATAFILE);
 
@@ -58,7 +57,7 @@ async fn refresh_repo(url: String) -> Result<String, String> {
         .get(&url)
         .ok_or_else(|| format!("Repo not found: {}", url))?;
 
-    let config = helper::read_config()?;  // now propagates
+    let config = helper::read_config()?; // now propagates
     let git_api_handler = GitHandler {};
 
     let result = git_api_handler
@@ -75,14 +74,14 @@ async fn refresh_repo(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn add_repo(url: String, host: String) -> Result<String, String> {
+async fn add_repo(url: String, host: String, forge: ForgeKind) -> Result<String, String> {
     let datafile_path_string = datafile_path_string()?;
 
     let config = helper::read_config()?;
     let git_api_handler = GitHandler {};
 
     let new_repo_data = git_api_handler
-        .post_request(&config, url.clone(), host)
+        .post_request(&config, url.clone(), host, forge)
         .await
         .map_err(|e| format!("Error adding repository: {}", e))?;
 
@@ -101,9 +100,14 @@ async fn mark_as_updated(url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Run all migrations before anything touches the data or config files.
     if let Ok(path) = datafile_path_string() {
-            migration::run_migrations(&path);
-        }
+        migration::run_migrations(&path);
+    }
+    if let Ok(path) = crate::config_handler::ConfigHandler::config_path_string() {
+        migration::run_config_migrations(&path);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

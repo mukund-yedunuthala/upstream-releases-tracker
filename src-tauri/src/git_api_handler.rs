@@ -1,6 +1,6 @@
 use reqwest::Client;
 use std::sync::OnceLock;
-use tracker_libs::{Config, RepoData};
+use tracker_libs::{Config, ForgeKind, RepoData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GitHandler;
@@ -15,52 +15,47 @@ fn http_client() -> &'static Client {
     })
 }
 
+/// Parses owner and repo name from any forge URL.
 fn parse_url(url: &str) -> Result<(String, String), String> {
     let url = url.trim_end_matches('/');
     let parts: Vec<&str> = url.splitn(6, '/').collect();
-
-    // Minimum: ["https:", "", "host", "owner", "repo"]
     if parts.len() < 5 {
         return Err(format!("URL does not look like a valid repo URL: {}", url));
     }
-
     let owner = parts[3].to_string();
-    let repo  = parts[4].to_string();
-
+    let repo = parts[4].to_string();
     if owner.is_empty() || repo.is_empty() {
         return Err(format!("Could not extract owner/repo from URL: {}", url));
     }
-
     Ok((owner, repo))
 }
 
+/// Dispatches to the correct API implementation based on the user-selected forge kind.
 async fn api_call(
     config: &Config,
     owner: &str,
     repo: &str,
-    host: &str,
+    host_url: &str,
+    host_kind: &ForgeKind,
 ) -> Result<serde_json::Value, String> {
-    match host {
-        "github.com" => github_api_call(config, owner, repo).await,
+    match host_kind {
+        ForgeKind::GitHub => github_api_call(config, owner, repo).await,
 
-        "gitlab.com" => {
+        ForgeKind::ForgejoCompatible => forgejo_api_call(config, host_url, owner, repo).await,
+
+        ForgeKind::GitLab => {
             // TODO(gitlab): Implement GitLab releases API.
-            // Endpoint: GET /api/v4/projects/{owner}%2F{repo}/releases
+            // Endpoint: GET https://gitlab.com/api/v4/projects/{owner}%2F{repo}/releases
             // Auth header: "PRIVATE-TOKEN: <config.gitlab_token>"
+            // Note: owner/repo must be URL-encoded as a single slug: "owner%2Frepo"
             // Reference: https://docs.gitlab.com/ee/api/releases/
             Err("GitLab support is not yet implemented".to_string())
         }
 
-        // _ if host == config.gitea_endpoint.trim_start_matches("https://").trim_end_matches('/') => {
-        //     // TODO(gitea/forgejo): Implement Gitea/Forgejo releases API.
-        //     // Endpoint: GET /api/v1/repos/{owner}/{repo}/releases/latest
-        //     // Auth header: "Authorization: token <config.gitea_token>"
-        //     // Forgejo uses the same API surface as Gitea.
-        //     // Reference: https://gitea.io/api/swagger
-        //     Err("Gitea/Forgejo support is not yet implemented".to_string())
-        // }
-
-        _ => Err(format!("Unsupported host '{}'", host)),
+        ForgeKind::Unknown => Err(format!(
+            "Unknown forge host '{}' — cannot fetch releases",
+            host_url
+        )),
     }
 }
 
@@ -77,10 +72,7 @@ async fn github_api_call(
     let mut request = http_client().get(&api_url);
 
     if !config.github_api_key.is_empty() {
-        request = request.header(
-            "Authorization",
-            format!("Bearer {}", config.github_api_key),
-        );
+        request = request.header("Authorization", format!("Bearer {}", config.github_api_key));
     }
 
     let response = request
@@ -91,7 +83,7 @@ async fn github_api_call(
     let status = response.status();
     if !status.is_success() {
         return Err(format!(
-            "GitHub API returned error {}: {} for {}/{}",
+            "GitHub API returned {} ({}) for {}/{}",
             status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown"),
             owner,
@@ -102,39 +94,94 @@ async fn github_api_call(
     response
         .json::<serde_json::Value>()
         .await
-        .map_err(|e| format!("Failed to parse API response as JSON: {}", e))
+        .map_err(|e| format!("Failed to parse GitHub API response: {}", e))
+}
+
+async fn forgejo_api_call(
+    config: &Config,
+    host_url: &str,
+    owner: &str,
+    repo: &str,
+) -> Result<serde_json::Value, String> {
+    // Forgejo and Gitea share the same API surface.
+    // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
+    let api_url = format!(
+        "https://{}/api/v1/repos/{}/{}/releases/latest",
+        host_url, owner, repo
+    );
+
+    let mut request = http_client().get(&api_url);
+
+    if !config.forgejo_token.is_empty() {
+        request = request.header("Authorization", format!("token {}", config.forgejo_token));
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request to '{}' failed: {}", host_url, e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!(
+            "Forgejo API at '{}' returned {} ({}) for {}/{}",
+            host_url,
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown"),
+            owner,
+            repo
+        ));
+    }
+
+    response.json::<serde_json::Value>().await.map_err(|e| {
+        format!(
+            "Failed to parse Forgejo API response from '{}': {}",
+            host_url, e
+        )
+    })
 }
 
 impl GitHandler {
     pub async fn post_request(
-            &self,
-            config: &Config,
-            url: String,
-            host: String,
-        ) -> Result<RepoData, String> {
-            let (owner, repo_name) = parse_url(&url)?;
-            let json = api_call(config, &owner, &repo_name, &host).await?;
+        &self,
+        config: &Config,
+        url: String,
+        host_url: String,
+        host_kind: ForgeKind,
+    ) -> Result<RepoData, String> {
+        let (owner, repo_name) = parse_url(&url)?;
+        let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
 
-            Ok(RepoData {
-                owner,
-                repo_name,
-                host,
-                latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
-                system_version: String::new(),
-            })
-        }
+        Ok(RepoData {
+            owner,
+            repo_name,
+            host_url,
+            host_kind,
+            latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
+            // Empty on first add — user hasn't installed this version yet.
+            system_version: String::new(),
+        })
+    }
 
     pub async fn refresh_repo(
         &self,
         config: &Config,
         old_repo: &RepoData,
     ) -> Result<RepoData, String> {
-        let json = api_call(config, &old_repo.owner, &old_repo.repo_name, &old_repo.host).await?;
+        let json = api_call(
+            config,
+            &old_repo.owner,
+            &old_repo.repo_name,
+            &old_repo.host_url,
+            &old_repo.host_kind,
+        )
+        .await?;
 
         Ok(RepoData {
             owner: old_repo.owner.clone(),
             repo_name: old_repo.repo_name.clone(),
-            host: old_repo.host.clone(),
+            host_url: old_repo.host_url.clone(),
+            host_kind: old_repo.host_kind.clone(),
             latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
             system_version: old_repo.system_version.clone(),
         })

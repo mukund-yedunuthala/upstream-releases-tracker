@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // State
 let editingUrl = null;
-let editingHost = null;
+let editingHostKind = null;
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -13,6 +13,20 @@ const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
+
+// Maps ForgeKind enum variants to display labels
+function forgeLabel(hostKind) {
+  switch (hostKind) {
+    case "GitHub":
+      return "GitHub";
+    case "GitLab":
+      return "GitLab";
+    case "ForgejoCompatible":
+      return "Codeberg / Forgejo";
+    default:
+      return hostKind || "Unknown";
+  }
+}
 
 // Build a card from RepoData
 function buildCard(url, data) {
@@ -40,7 +54,9 @@ function buildCard(url, data) {
         <span class="badge ${badgeClass}">${badgeText}</span>
       </div>
       <div class="repo-card-subtitle">
-        <span class="host-badge">${data.host || "github.com"}</span>
+        <span class="host-badge host-badge--${data.host_kind?.toLowerCase().replace("compatible", "") || "unknown"}">
+          ${forgeLabel(data.host_kind)}
+        </span>
         <a href="${url}" class="repo-url">${shortUrl}</a>
       </div>
     </header>
@@ -139,7 +155,8 @@ async function loadRepos() {
 // Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
-  const host = hostSelect.value;
+  const forge = hostSelect.value; // "GitHub" | "GitLab" | "ForgejoCompatible"
+  const host = extractHostUrl(url); // "github.com", "codeberg.org", etc.
 
   if (!url) {
     ot.toast("Please enter a repository URL", "Missing URL", {
@@ -147,19 +164,16 @@ addBtn.addEventListener("click", async () => {
     });
     return;
   }
-
   if (!isValidRepoUrl(url)) {
-    ot.toast(
-      "URL must be in the format https://host.com/owner/repo",
-      "Invalid URL",
-      { variant: "danger" },
-    );
+    ot.toast("URL must be https://host/owner/repo", "Invalid URL", {
+      variant: "danger",
+    });
     return;
   }
 
   addBtn.disabled = true;
   try {
-    await invoke("add_repo", { url, host });
+    await invoke("add_repo", { url, host, forge });
     ot.toast("Repository added", "Done", { variant: "success" });
     urlInput.value = "";
     await loadRepos();
@@ -169,6 +183,15 @@ addBtn.addEventListener("click", async () => {
     addBtn.disabled = false;
   }
 });
+
+// Extract host URL from a given URL
+function extractHostUrl(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
 
 // Enter key on input
 urlInput.addEventListener("keydown", (ev) => {
@@ -222,48 +245,48 @@ async function handleDelete(url) {
 }
 
 // Edit dialog open
-function openEditDialog(url, name, host) {
+function openEditDialog(url, name, hostKind) {
   editingUrl = url;
-  editingHost = host;
+  editingHostKind = hostKind;
   editUrlInput.value = url;
-  editHostSelect.value = host;
+  editHostSelect.value = hostKind;
   editDialog.showModal();
 }
-
 // Edit dialog
 editDialog.addEventListener("close", async () => {
   if (editDialog.returnValue !== "save") {
     editingUrl = null;
+    editingHostKind = null;
     return;
   }
 
   const newUrl = editUrlInput.value.trim();
+  const newHostKind = editHostSelect.value;
 
-  if (!editingUrl || !newUrl || newUrl === editingUrl) {
+  if (!editingUrl || !newUrl) {
     editingUrl = null;
     return;
   }
-
   if (!isValidRepoUrl(newUrl)) {
-    ot.toast(
-      "URL must be in the format https://host.com/owner/repo",
-      "Invalid URL",
-      { variant: "danger" },
-    );
+    ot.toast("URL must be https://host/owner/repo", "Invalid URL", {
+      variant: "danger",
+    });
     editingUrl = null;
     return;
   }
+
+  const host_url = extractHostUrl(newUrl);
 
   try {
     await invoke("delete_repo", { url: editingUrl });
-    await invoke("add_repo", { url: newUrl, host: editingHost });
+    await invoke("add_repo", { url: newUrl, host_url, host_kind: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Update failed", { variant: "danger" });
   } finally {
     editingUrl = null;
-    editingHost = null;
+    editingHostKind = null;
   }
 });
 
