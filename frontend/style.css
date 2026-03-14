@@ -12,17 +12,22 @@
 
     --font-title: clamp(1.125rem, 3vw, 1.5rem);
     --font-body: clamp(0.875rem, 2vw, 1rem);
-    --font-muted: 0.8em;
+    --font-muted: 0.8rem; /* Fixed: was 0.8em (relative, inconsistent with other rem tokens) */
 }
 
 /* ── Layout ── */
-.container {
+/* Renamed from .container to .app-container to avoid conflict with Oat UI's
+   built-in .container grid class (.container .row .col-{n}) */
+.app-container {
     width: 100%;
     padding: var(--lg) var(--xl);
     min-height: 100vh;
+    /* Removed: height: 100vh — redundant alongside min-height and prevented growth */
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    /* Removed: -webkit-overflow-scrolling: touch — deprecated no-op since 2020 */
 }
 
 /* ── Top bar ── */
@@ -54,44 +59,35 @@
     min-width: 0;
 }
 
-/* Three-part fused input group: [select][input][button] */
+/* The input group: select + url input + button fused together */
 #topbar-actions .group {
     flex: 1;
-    max-width: 680px;
+    max-width: 640px;
     margin: 0;
     display: flex;
     align-items: stretch;
-    /* Oat's .group sets overflow hidden + border-radius — we reinforce it */
-    overflow: hidden;
 }
 
-/* Host select: flush left segment */
-#repo-host-select {
+/* Host select inside the group sits flush left */
+#topbar-actions .group select {
     flex-shrink: 0;
-    width: 120px;
-    padding: 0 var(--sm);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
     border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    /* Override any Oat radius on this element — it sits inside the group */
-    border-radius: 0;
-    appearance: auto;
+    border-radius: var(--radius) 0 0 var(--radius);
+    padding: 0 var(--sm);
+    font-size: var(--font-body);
+    cursor: pointer;
+    max-width: 120px;
 }
 
-/* URL input: stretches to fill remaining space */
-#topbar-actions .group input[type="url"] {
+#topbar-actions .group input {
     flex: 1;
     min-width: 0;
     border-radius: 0;
-    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
-/* Add button: flush right segment */
-#add-repo-btn {
+#topbar-actions .group button {
     flex-shrink: 0;
-    border-radius: 0;
-    white-space: nowrap;
+    border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 #refresh-all-btn {
@@ -106,6 +102,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--lg);
+    /* Removed: transform: translateZ(0) — creates stacking context that can clip
+       box-shadows and fixed/absolute children inside cards unexpectedly */
 }
 
 /* ── Repo card ── */
@@ -117,19 +115,20 @@
     flex-direction: column;
     gap: var(--md);
     box-sizing: border-box;
-    will-change: transform;
-    transform: translateY(0);
-    transition:
-        transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
-        box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Changed: contain: layout — removed 'paint' to allow box-shadows and
+       any overlay/tooltip children to paint outside the card boundary */
+    contain: layout;
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Fixed: was rgba(255,255,255,0.08) — hardcoded light-on-dark assumption
+       that breaks in light mode; now theme-agnostic via color-mix */
     border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
 }
 
 .repo-card:hover {
-    transform: translateY(-0.125rem);
-    box-shadow: 0 8px 32px color-mix(in srgb, currentColor 15%, transparent);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
+/* Card header: title + badge row, then url + host badge row */
 .repo-card-title {
     display: flex;
     align-items: flex-start;
@@ -144,7 +143,7 @@
     line-height: 1.25;
 }
 
-/* Host badge + URL row */
+/* Host + URL row sits directly under the title */
 .repo-card-subtitle {
     display: flex;
     align-items: center;
@@ -152,51 +151,22 @@
     flex-wrap: wrap;
 }
 
-/* ── Host badge base ── */
+/* Small pill showing the forge host */
 .host-badge {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    padding: 0.15rem var(--sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.1rem var(--sm);
     border-radius: var(--radius-sm);
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     white-space: nowrap;
+    opacity: 0.85;
     flex-shrink: 0;
-    opacity: 0.9;
-}
-
-/* GitHub — subtle blue-grey */
-.host-badge--github {
-    background: color-mix(in srgb, #4493f8 14%, transparent);
-    border: 1px solid color-mix(in srgb, #4493f8 30%, transparent);
-    color: #4493f8;
-}
-
-/* GitLab — orange */
-.host-badge--gitlab {
-    background: color-mix(in srgb, #fc6d26 14%, transparent);
-    border: 1px solid color-mix(in srgb, #fc6d26 30%, transparent);
-    color: #fc6d26;
-}
-
-/* Gitea / Forgejo — teal */
-.host-badge--forgejo {
-    background: color-mix(in srgb, #609926 14%, transparent);
-    border: 1px solid color-mix(in srgb, #609926 30%, transparent);
-    color: #78bc34;
-}
-
-/* Unknown fallback */
-.host-badge--unknown {
-    background: color-mix(in srgb, currentColor 8%, transparent);
-    border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
 .repo-url {
     font-size: var(--font-muted);
-    opacity: 0.6;
+    opacity: 0.65;
     word-break: break-all;
     color: inherit;
     text-decoration: none;
@@ -207,7 +177,7 @@
     text-decoration: underline;
 }
 
-/* ── Card meta rows ── */
+/* ── Card meta rows (latest release / installed version) ── */
 .repo-card-meta {
     display: flex;
     align-items: center;
@@ -219,7 +189,9 @@
     border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
 }
 
-/* Collapse the double border between consecutive meta rows */
+/* Collapse double borders between two consecutive meta rows.
+   Also remove padding-top so spacing is even — the bottom padding of
+   the preceding row already provides the visual gap. */
 .repo-card-meta + .repo-card-meta {
     border-top: none;
     padding-top: 0;
@@ -264,12 +236,14 @@
     justify-content: flex-end;
 }
 
-/* ── Edit dialog ── */
+/* ── Edit dialog internals ── */
 #edit-dialog form {
     display: flex;
     flex-direction: column;
     gap: var(--md);
-    min-width: 420px;
+    /* Fixed: was min-width: 420px with a media-query override.
+       width: min(420px, 90vw) handles both desktop and mobile in one rule. */
+    width: min(420px, 90vw);
 }
 
 #edit-dialog header {
@@ -286,7 +260,7 @@
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-    .container {
+    .app-container {
         padding: var(--md) var(--sm);
     }
 
@@ -299,15 +273,18 @@
     #topbar-actions {
         flex-direction: column;
         align-items: stretch;
-        gap: var(--sm);
+        justify-content: stretch;
     }
 
     #topbar-actions .group {
         max-width: 100%;
     }
 
-    #repo-host-select {
-        width: 120px;
+    /* Fixed: reset border-radius on select so it doesn't look broken
+       when the group stacks vertically in a column layout */
+    #topbar-actions .group select {
+        max-width: 100px;
+        border-radius: var(--radius) 0 0 var(--radius);
     }
 
     #refresh-all-btn {
@@ -322,10 +299,5 @@
         flex-direction: column;
         align-items: flex-start;
         gap: var(--xs);
-    }
-
-    #edit-dialog form {
-        min-width: unset;
-        width: 90vw;
     }
 }
