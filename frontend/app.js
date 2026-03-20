@@ -14,7 +14,6 @@ const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
 
-// Maps ForgeKind enum variants to display labels
 function forgeLabel(hostKind) {
   switch (hostKind) {
     case "GitHub":
@@ -28,7 +27,6 @@ function forgeLabel(hostKind) {
   }
 }
 
-// Build a card from RepoData
 function buildCard(url, data) {
   const id = btoa(url)
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -155,8 +153,8 @@ async function loadRepos() {
 // Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
-  const forge = hostSelect.value; // "GitHub" | "GitLab" | "ForgejoCompatible"
-  const host = extractHostUrl(url); // "github.com", "codeberg.org", etc.
+  const forge = hostSelect.value;
+  const host = extractHostUrl(url);
 
   if (!url) {
     ot.toast("Please enter a repository URL", "Missing URL", {
@@ -289,12 +287,10 @@ editDialog.addEventListener("close", async () => {
   }
 });
 
-// Mirrors helper.rs is_valid_repo_url — any HTTPS URL with owner/repo segments.
 function isValidRepoUrl(url) {
   return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
     url,
   );
 }
 
-// Initial load
 loadRepos();

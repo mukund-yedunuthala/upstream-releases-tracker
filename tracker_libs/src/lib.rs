@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub enum ForgeKind {
     GitHub,
     GitLab,
-    ForgejoCompatible, // Covers both Gitea and Forgejo — identical API surface
+    ForgejoCompatible,
     Unknown,
 }
 
