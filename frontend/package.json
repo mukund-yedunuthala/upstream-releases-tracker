@@ -1,6 +1,6 @@
 {
   "name": "upstream-releases-tracker-frontend",
-  "version": "3.2.0",
+  "version": "3.2.2",
   "description": "",
   "main": "app.js",
   "scripts": {
@@ -16,6 +16,6 @@
     "@tauri-apps/plugin-opener": "^2.5.3"
   },
   "devDependencies": {
-    "vite": "^7.3.1"
+    "vite": "^8.0.0"
   }
 }
