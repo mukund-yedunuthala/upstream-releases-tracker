@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-
+import { openUrl } from "@tauri-apps/plugin-opener";
 // State
 let editingUrl = null;
 let editingHostKind = null;
@@ -13,6 +13,21 @@ const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
+
+document.addEventListener("click", async (e) => {
+  const anchor = e.target.closest("a[href]");
+  if (!anchor) return;
+
+  const href = anchor.getAttribute("href");
+  if (!href || href.startsWith("#")) return;
+
+  e.preventDefault();
+  try {
+    await openUrl(href);
+  } catch (err) {
+    ot.toast(String(err), "Failed to open link", { variant: "danger" });
+  }
+});
 
 function forgeLabel(hostKind) {
   switch (hostKind) {
@@ -55,7 +70,7 @@ function buildCard(url, data) {
         <span class="host-badge host-badge--${data.host_kind?.toLowerCase().replace("compatible", "") || "unknown"}">
           ${forgeLabel(data.host_kind)}
         </span>
-        <a href="${url}" class="repo-url">${shortUrl}</a>
+        <a href="${url}" class="repo-url" rel="noopener noreferrer">${shortUrl}</a>
       </div>
     </header>
     <div class="repo-card-meta">
