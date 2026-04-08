@@ -5,15 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Upstream Releases Tracker</title>
 
-        <!-- Oat CSS -->
         <link rel="stylesheet" href="./oat.min.css" />
 
-        <!-- App styles -->
         <link rel="stylesheet" href="./style.css" />
     </head>
     <body>
         <main class="container">
-            <!-- Top bar -->
             <header id="topbar">
                 <h2>Upstream Releases Tracker</h2>
                 <div id="topbar-actions">
@@ -39,14 +36,9 @@
                     </button>
                 </div>
             </header>
-
-            <!-- Cards grid -->
-            <section id="repo-grid">
-                <!-- Cards rendered by app.js -->
-            </section>
+            <section id="repo-grid"></section>
         </main>
 
-        <!-- Edit dialog -->
         <dialog id="edit-dialog" closedby="any">
             <form method="dialog">
                 <header>
@@ -83,8 +75,6 @@
                 </footer>
             </form>
         </dialog>
-
-        <!-- Oat JS + Tauri + App -->
         <script type="module" src="./oat.min.js" defer></script>
         <script type="module" src="./app.js" defer></script>
     </body>

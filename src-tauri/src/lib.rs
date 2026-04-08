@@ -57,7 +57,7 @@ async fn refresh_repo(url: String) -> Result<String, String> {
         .get(&url)
         .ok_or_else(|| format!("Repo not found: {}", url))?;
 
-    let config = helper::read_config()?; // now propagates
+    let config = helper::read_config()?;
     let git_api_handler = GitHandler {};
 
     let result = git_api_handler
@@ -100,7 +100,6 @@ async fn mark_as_updated(url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Run all migrations before anything touches the data or config files.
     if let Ok(path) = datafile_path_string() {
         migration::run_migrations(&path);
     }

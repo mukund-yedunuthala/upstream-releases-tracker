@@ -2,7 +2,6 @@ use crate::json_handler::JSONHandler;
 use serde_json::Value;
 use std::path::Path;
 
-/// Migrates repos.json schema. Safe to call every startup — idempotent.
 pub fn run_migrations(datafile_path: &str) {
     if !Path::new(datafile_path).exists() {
         return;
@@ -15,19 +14,13 @@ pub fn run_migrations(datafile_path: &str) {
             if let Some(repos) = raw.as_object_mut() {
                 for (_url, repo) in repos.iter_mut() {
                     if let Some(obj) = repo.as_object_mut() {
-                        // Migration 1: drop "notes" if present.
                         if obj.remove("notes").is_some() {
                             dirty = true;
                         }
-
-                        // Migration 2: rename "host" → "host_url".
                         if let Some(host_val) = obj.remove("host") {
                             obj.insert("host_url".to_string(), host_val);
                             dirty = true;
                         }
-
-                        // Migration 3: add "host_url" defaulting to "github.com"
-                        // if still absent after migration 2.
                         if !obj.contains_key("host_url") {
                             obj.insert(
                                 "host_url".to_string(),
@@ -35,9 +28,6 @@ pub fn run_migrations(datafile_path: &str) {
                             );
                             dirty = true;
                         }
-
-                        // Migration 4: add "host_kind" defaulting to "GitHub"
-                        // for all pre-existing entries.
                         if !obj.contains_key("host_kind") {
                             obj.insert(
                                 "host_kind".to_string(),
@@ -60,11 +50,8 @@ pub fn run_migrations(datafile_path: &str) {
     }
 }
 
-/// Migrates config.json schema. Safe to call every startup — idempotent.
 pub fn run_config_migrations(config_path: &str) {
     if !Path::new(config_path).exists() {
-        // Config doesn't exist yet — ConfigHandler::read_config will create
-        // a fresh template with all current fields, no migration needed.
         return;
     }
 

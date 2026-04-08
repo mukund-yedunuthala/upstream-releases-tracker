@@ -15,7 +15,6 @@ fn http_client() -> &'static Client {
     })
 }
 
-/// Parses owner and repo name from any forge URL.
 fn parse_url(url: &str) -> Result<(String, String), String> {
     let url = url.trim_end_matches('/');
     let parts: Vec<&str> = url.splitn(6, '/').collect();
@@ -30,7 +29,6 @@ fn parse_url(url: &str) -> Result<(String, String), String> {
     Ok((owner, repo))
 }
 
-/// Dispatches to the correct API implementation based on the user-selected forge kind.
 async fn api_call(
     config: &Config,
     owner: &str,
@@ -103,8 +101,6 @@ async fn forgejo_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
-    // Forgejo and Gitea share the same API surface.
-    // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
     let api_url = format!(
         "https://{}/api/v1/repos/{}/{}/releases/latest",
         host_url, owner, repo
@@ -158,7 +154,6 @@ impl GitHandler {
             host_url,
             host_kind,
             latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
-            // Empty on first add — user hasn't installed this version yet.
             system_version: String::new(),
         })
     }

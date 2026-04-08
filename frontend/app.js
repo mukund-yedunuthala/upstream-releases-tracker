@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-
+import { openUrl } from "@tauri-apps/plugin-opener";
 // State
 let editingUrl = null;
 let editingHostKind = null;
@@ -14,7 +14,21 @@ const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
 
-// Maps ForgeKind enum variants to display labels
+document.addEventListener("click", async (e) => {
+  const anchor = e.target.closest("a[href]");
+  if (!anchor) return;
+
+  const href = anchor.getAttribute("href");
+  if (!href || href.startsWith("#")) return;
+
+  e.preventDefault();
+  try {
+    await openUrl(href);
+  } catch (err) {
+    ot.toast(String(err), "Failed to open link", { variant: "danger" });
+  }
+});
+
 function forgeLabel(hostKind) {
   switch (hostKind) {
     case "GitHub":
@@ -28,7 +42,6 @@ function forgeLabel(hostKind) {
   }
 }
 
-// Build a card from RepoData
 function buildCard(url, data) {
   const id = btoa(url)
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -57,7 +70,7 @@ function buildCard(url, data) {
         <span class="host-badge host-badge--${data.host_kind?.toLowerCase().replace("compatible", "") || "unknown"}">
           ${forgeLabel(data.host_kind)}
         </span>
-        <a href="${url}" class="repo-url">${shortUrl}</a>
+        <a href="${url}" class="repo-url" rel="noopener noreferrer">${shortUrl}</a>
       </div>
     </header>
     <div class="repo-card-meta">
@@ -155,8 +168,8 @@ async function loadRepos() {
 // Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
-  const forge = hostSelect.value; // "GitHub" | "GitLab" | "ForgejoCompatible"
-  const host = extractHostUrl(url); // "github.com", "codeberg.org", etc.
+  const forge = hostSelect.value;
+  const host = extractHostUrl(url);
 
   if (!url) {
     ot.toast("Please enter a repository URL", "Missing URL", {
@@ -290,12 +303,10 @@ editDialog.addEventListener("close", async () => {
   }
 });
 
-// Mirrors helper.rs is_valid_repo_url — any HTTPS URL with owner/repo segments.
 function isValidRepoUrl(url) {
   return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
     url,
   );
 }
 
-// Initial load
 loadRepos();

@@ -1,9 +1,8 @@
 [package]
 name = "upstream-releases-tracker"
-version = "3.2.1"
+version = "3.2.2"
 edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 web-sys = { version = "^0.3", features = ["Window"] }
 js-sys = "^0.3"
