@@ -9,7 +9,7 @@ Hobby project built to figure out JSON I/O. Code refined using AI tools, any res
 Frontend uses components from [Oat UI](https://github.com/knadh/oat) under [MIT License](https://raw.githubusercontent.com/knadh/oat/refs/heads/master/LICENSE)
 
 ## Installation
-Download windows installer from [GitHub](https://github.com/mukund-yedunuthala/upstream-releases-tracker/releases/download/v3.2.1/Upstream.Releases.Tracker_3.2.1_x64_en-US.msi)
+Download windows installer from [GitHub](https://github.com/mukund-yedunuthala/upstream-releases-tracker/releases/download/v3.2.3/Upstream.Releases.Tracker_3.2.3_x64_en-US.msi)
 
 ## Tech Stack
 Frontend: Oat UI + Vite
