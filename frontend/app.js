@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import "@knadh/oat/oat.min.css";
+import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
 let editingHostKind = null;

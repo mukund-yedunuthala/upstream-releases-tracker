@@ -1,6 +1,6 @@
 {
   "name": "upstream-releases-tracker-frontend",
-  "version": "3.2.2",
+  "version": "3.2.4",
   "description": "",
   "main": "app.js",
   "scripts": {
@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@knadh/oat": "^0.6.0",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-opener": "^2.5.3"
   },
