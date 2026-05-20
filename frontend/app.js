@@ -4,7 +4,6 @@ import "@knadh/oat/oat.min.css";
 import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
-let editingHostKind = null;
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -15,6 +14,39 @@ const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
+const editCancelBtn = document.getElementById("edit-cancel-btn");
+
+editCancelBtn.addEventListener("click", () => editDialog.close());
+
+// Delegated handler for all card action buttons — one listener for all cards.
+repoGrid.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const card = btn.closest("[data-url]");
+  if (!card) return;
+  const url = card.dataset.url;
+  switch (btn.dataset.action) {
+    case "refresh":
+      handleRefresh(btn, url);
+      break;
+    case "mark-updated":
+      handleMarkAsUpdated(url);
+      break;
+    case "edit":
+      openEditDialog(url, card.dataset.hostKind);
+      break;
+    case "delete-trigger":
+      card.querySelector(".delete-popover").hidden = false;
+      break;
+    case "delete-cancel":
+      card.querySelector(".delete-popover").hidden = true;
+      break;
+    case "confirm-delete":
+      card.querySelector(".delete-popover").hidden = true;
+      handleDelete(url);
+      break;
+  }
+});
 
 document.addEventListener("click", async (e) => {
   const anchor = e.target.closest("a[href]");
@@ -45,43 +77,45 @@ function forgeLabel(hostKind) {
 }
 
 function buildCard(url, data) {
-  const id = btoa(url)
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 12);
   const isUpToDate =
     !!data.system_version && data.system_version === data.latest_release;
   const badgeClass = isUpToDate ? "success" : "warning";
   const badgeText = isUpToDate ? "Up to date" : "Update available";
-  const shortUrl = url.replace(/^https?:\/\//, "");
-  const title = data.owner + "/" + data.repo_name;
-  const name = title || shortUrl;
+  // Only allow https: URLs in the href to prevent javascript: injection
+  const safeUrl = url.startsWith("https://") ? url : null;
+  const shortUrl = safeUrl ? safeUrl.replace(/^https:\/\//, "") : "";
+  const name =
+    data.owner && data.repo_name
+      ? `${data.owner}/${data.repo_name}`
+      : shortUrl;
   const latest = data.latest_release || "—";
   const system = data.system_version || "—";
+  const hostSlug =
+    data.host_kind?.toLowerCase().replace("compatible", "") || "unknown";
 
   const card = document.createElement("article");
   card.className = "card repo-card";
   card.dataset.url = url;
 
+  // Static structural markup — no user/API data interpolated here
   card.innerHTML = `
     <header>
       <div class="repo-card-title">
-        <strong>${name}</strong>
-        <span class="badge ${badgeClass}">${badgeText}</span>
+        <strong class="js-card-name"></strong>
+        <span class="js-card-badge"></span>
       </div>
       <div class="repo-card-subtitle">
-        <span class="host-badge host-badge--${data.host_kind?.toLowerCase().replace("compatible", "") || "unknown"}">
-          ${forgeLabel(data.host_kind)}
-        </span>
-        <a href="${url}" class="repo-url" rel="noopener noreferrer">${shortUrl}</a>
+        <span class="js-card-host-badge host-badge"></span>
+        <a class="repo-url js-card-url"></a>
       </div>
     </header>
     <div class="repo-card-meta">
       <span>Latest release</span>
-      <code>${latest}</code>
+      <code class="js-card-latest"></code>
     </div>
     <div class="repo-card-meta">
       <span>Installed version</span>
-      <code>${system}</code>
+      <code class="js-card-system"></code>
     </div>
     <footer class="repo-card-actions">
       <button class="small outline" data-action="refresh">Refresh</button>
@@ -102,43 +136,21 @@ function buildCard(url, data) {
     </footer>
   `;
 
-  // Refresh
-  card
-    .querySelector('[data-action="refresh"]')
-    .addEventListener("click", (e) => handleRefresh(e.currentTarget, url));
-
-  // Mark as updated
-  card
-    .querySelector('[data-action="mark-updated"]')
-    .addEventListener("click", () => handleMarkAsUpdated(url));
-
-  // Edit
-  card
-    .querySelector('[data-action="edit"]')
-    .addEventListener("click", () => openEditDialog(url, name, data.host));
-
-  // Delete trigger: show the inline popover
-  const deletePopover = card.querySelector(".delete-popover");
-  card
-    .querySelector('[data-action="delete-trigger"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = false;
-    });
-
-  // Cancel: hide it again
-  card
-    .querySelector('[data-action="delete-cancel"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = true;
-    });
-
-  // Confirm delete
-  card
-    .querySelector('[data-action="confirm-delete"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = true;
-      handleDelete(url);
-    });
+  // Inject all dynamic data via DOM — never via innerHTML interpolation
+  card.querySelector(".js-card-name").textContent = name;
+  const badge = card.querySelector(".js-card-badge");
+  badge.className = `badge ${badgeClass}`;
+  badge.textContent = badgeText;
+  const hostBadge = card.querySelector(".js-card-host-badge");
+  hostBadge.classList.add(`host-badge--${hostSlug}`);
+  hostBadge.textContent = forgeLabel(data.host_kind);
+  const link = card.querySelector(".js-card-url");
+  if (safeUrl) link.href = safeUrl;
+  link.textContent = shortUrl;
+  card.querySelector(".js-card-latest").textContent = latest;
+  card.querySelector(".js-card-system").textContent = system;
+  // Store host_kind for the delegated edit handler (see repoGrid click listener)
+  card.dataset.hostKind = data.host_kind || "";
 
   return card;
 }
@@ -234,12 +246,18 @@ async function handleRefresh(btn, url) {
 refreshAllBtn.addEventListener("click", async () => {
   refreshAllBtn.disabled = true;
   try {
-    const repos = await invoke("get_repos");
-    const urls = Object.keys(repos);
-    for (const url of urls) {
-      await invoke("refresh_repo", { url });
+    const { ok, err } = await invoke("refresh_all");
+    if (err.length === 0) {
+      ot.toast(`All ${ok.length} repos refreshed`, "Done", {
+        variant: "success",
+      });
+    } else {
+      ot.toast(
+        `${ok.length} refreshed, ${err.length} failed:\n${err.map(([u, e]) => `${u}: ${e}`).join("\n")}`,
+        "Partial refresh",
+        { variant: "warning" },
+      );
     }
-    ot.toast("All repos refreshed", "Done", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Refresh all failed", { variant: "danger" });
@@ -260,9 +278,8 @@ async function handleDelete(url) {
 }
 
 // Edit dialog open
-function openEditDialog(url, name, hostKind) {
+function openEditDialog(url, hostKind) {
   editingUrl = url;
-  editingHostKind = hostKind;
   editUrlInput.value = url;
   editHostSelect.value = hostKind;
   editDialog.showModal();
@@ -271,9 +288,9 @@ function openEditDialog(url, name, hostKind) {
 editDialog.addEventListener("close", async () => {
   if (editDialog.returnValue !== "save") {
     editingUrl = null;
-    editingHostKind = null;
     return;
   }
+
   const newUrl = editUrlInput.value.trim();
   const newHostKind = editHostSelect.value;
 
@@ -293,17 +310,17 @@ editDialog.addEventListener("close", async () => {
 
   try {
     await invoke("delete_repo", { url: editingUrl });
-    await invoke("add_repo", { url: newUrl, host_url, host_kind: newHostKind });
+    await invoke("add_repo", { url: newUrl, host: host_url, forge: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Update failed", { variant: "danger" });
   } finally {
     editingUrl = null;
-    editingHostKind = null;
   }
 });
 
+// Mirrors parse_url in git_api_handler.rs — must stay in sync with Rust validation.
 function isValidRepoUrl(url) {
   return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
     url,

@@ -21,6 +21,7 @@
                             type="url"
                             id="repo-url-input"
                             placeholder="https://host.example.com/owner/repo"
+                            maxlength="2048"
                         />
                         <button id="add-repo-btn">Add repo</button>
                     </fieldset>
@@ -36,6 +37,7 @@
             <section id="repo-grid"></section>
         </main>
 
+        <!-- Edit dialog -->
         <dialog id="edit-dialog" closedby="any">
             <form method="dialog">
                 <header>
@@ -56,14 +58,14 @@
                             type="url"
                             id="edit-url-input"
                             placeholder="https://host.example.com/owner/repo"
+                            maxlength="2048"
                         />
                     </label>
                 </div>
                 <footer>
                     <button
                         type="button"
-                        commandfor="edit-dialog"
-                        command="close"
+                        id="edit-cancel-btn"
                         class="outline"
                     >
                         Cancel

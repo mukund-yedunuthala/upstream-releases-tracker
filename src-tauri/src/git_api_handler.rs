@@ -10,22 +10,36 @@ fn http_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
             .user_agent("Upstream-Release-Tracker")
+            .timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("Failed to build HTTP client")
     })
 }
 
 fn parse_url(url: &str) -> Result<(String, String), String> {
-    let url = url.trim_end_matches('/');
-    let parts: Vec<&str> = url.splitn(6, '/').collect();
-    if parts.len() < 5 {
-        return Err(format!("URL does not look like a valid repo URL: {}", url));
+    if url.len() > 2048 {
+        return Err("URL exceeds maximum allowed length of 2048 characters".to_string());
     }
-    let owner = parts[3].to_string();
-    let repo = parts[4].to_string();
-    if owner.is_empty() || repo.is_empty() {
-        return Err(format!("Could not extract owner/repo from URL: {}", url));
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "Only HTTPS URLs are supported (got '{}')",
+            parsed.scheme()
+        ));
     }
+    let mut segments = parsed
+        .path_segments()
+        .ok_or_else(|| "URL has no path segments".to_string())?
+        .filter(|s| !s.is_empty());
+    let owner = segments
+        .next()
+        .ok_or_else(|| "URL is missing owner segment".to_string())?
+        .to_string();
+    let repo = segments
+        .next()
+        .ok_or_else(|| "URL is missing repository segment".to_string())?
+        .to_string();
     Ok((owner, repo))
 }
 
@@ -50,10 +64,6 @@ async fn api_call(
             Err("GitLab support is not yet implemented".to_string())
         }
 
-        ForgeKind::Unknown => Err(format!(
-            "Unknown forge host '{}' — cannot fetch releases",
-            host_url
-        )),
     }
 }
 
@@ -101,6 +111,22 @@ async fn forgejo_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
+    // Reject hosts not on the user-managed allowlist to prevent token exfiltration.
+    // To add a new Forgejo host, add its hostname to forgejo_trusted_hosts in config.json.
+    if !config.forgejo_token.is_empty()
+        && !config
+            .forgejo_trusted_hosts
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(host_url))
+    {
+        return Err(format!(
+            "Host '{}' is not in forgejo_trusted_hosts. Add it to config.json to allow sending your token there.",
+            host_url
+        ));
+    }
+
+    // Forgejo and Gitea share the same API surface.
+    // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
     let api_url = format!(
         "https://{}/api/v1/repos/{}/{}/releases/latest",
         host_url, owner, repo
@@ -147,13 +173,17 @@ impl GitHandler {
     ) -> Result<RepoData, String> {
         let (owner, repo_name) = parse_url(&url)?;
         let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
+        let latest_release = json["tag_name"]
+            .as_str()
+            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
+            .to_string();
 
         Ok(RepoData {
             owner,
             repo_name,
             host_url,
             host_kind,
-            latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
+            latest_release,
             system_version: String::new(),
         })
     }
@@ -171,13 +201,17 @@ impl GitHandler {
             &old_repo.host_kind,
         )
         .await?;
+        let latest_release = json["tag_name"]
+            .as_str()
+            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
+            .to_string();
 
         Ok(RepoData {
             owner: old_repo.owner.clone(),
             repo_name: old_repo.repo_name.clone(),
             host_url: old_repo.host_url.clone(),
             host_kind: old_repo.host_kind.clone(),
-            latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
+            latest_release,
             system_version: old_repo.system_version.clone(),
         })
     }

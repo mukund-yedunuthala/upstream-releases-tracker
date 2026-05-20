@@ -1,6 +1,6 @@
 [package]
 name = "upstream-releases-tracker-lib"
-version = "3.2.4"
+version = "3.3.0"
 description = "Track releases from upstream repositories of projects"
 authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
 edition = "2024"
@@ -19,9 +19,13 @@ tauri-build = { version = "^2", features = [] }
 [dependencies]
 tauri = { version = "^2", features = [] }
 tauri-plugin-opener = "^2"
+tauri-plugin-log = "^2"
+log = "^0.4"
+tokio = { version = "^1", features = ["sync", "rt"] }
 serde = { version = "^1.0.219", features = ["derive"] }
 serde_json = "^1.0.140"
 dirs = "^6.0.0"
-reqwest = { version = "^0.13.2", features = ["blocking", "json"] }
+reqwest = { version = "^0.13.2", features = ["json"] }
+url = "^2"
 regex = "^1.11.1"
 tracker_libs = { path = "../tracker_libs" }

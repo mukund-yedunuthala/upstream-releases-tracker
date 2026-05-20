@@ -1,52 +1,70 @@
 # Upstream Releases Tracker
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repositories and compares them against the version installed on your system.
 
-Track remote releases from GitHub/Forgejo. Built with Tauri, Rust and JS.
+## Supported forges
 
-Hobby project built to figure out JSON I/O. Code refined using AI tools, any resemblance not intentional.
+- **GitHub** (public repos and private repos with a personal access token)
+- **Forgejo / Gitea** (Codeberg and self-hosted instances — see token security note below)
+- **GitLab** — stubbed, not yet implemented
 
-Frontend uses components from [Oat UI](https://github.com/knadh/oat) under [MIT License](https://raw.githubusercontent.com/knadh/oat/refs/heads/master/LICENSE)
+## Development
 
-## Installation
-Download windows installer from [GitHub](https://github.com/mukund-yedunuthala/upstream-releases-tracker/releases/download/v3.2.4/Upstream.Releases.Tracker_3.2.4_x64_en-US.msi)
+Install frontend dependencies (only needed once or after `package.json` changes):
 
-## Tech Stack
-Frontend: Oat UI + Vite
-Backend: Rust (Tauri 2.0)
-
-## Building from source
-#### Prerequisites
-- Rust 
-- Tauri (System requirements at [https://v2.tauri.app/start/prerequisites/](https://v2.tauri.app/start/prerequisites/))
-- npm
-
-#### Debug version
-```
-cargo tauri dev
+```sh
+cd frontend && npm install
 ```
 
-#### Build
+Run in dev mode (starts the Vite dev server and the Tauri shell):
+
+```sh
+cd src-tauri && cargo tauri dev
 ```
-cargo tauri build
+
+Build a distributable bundle:
+
+```sh
+cd src-tauri && cargo tauri build
 ```
+
+Run Rust tests:
+
+```sh
+cargo test --workspace
+```
+
+Frontend-only dev (Vite at `localhost:1420`, no Tauri):
+
+```sh
+cd frontend && npm run dev
+```
+
+## Architecture
+
+| Layer | Tech |
+|---|---|
+| Frontend | Vanilla JS + Vite, no framework. `frontend/app.js` is the single JS file. UI library: `oat` (bundled). |
+| Backend | Tauri 2.x (`src-tauri/`). All I/O and HTTP happen in Rust. |
+| Shared types | `tracker_libs/` — `Config`, `RepoData`, `ForgeKind`. No I/O. |
+
+Tauri commands: `get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`.
+
+## Data locations (Linux)
+
+| File | Path |
+|---|---|
+| Repos | `~/.local/share/upstream-releases-tracker/data/repos.json` |
+| Config | `~/.config/upstream-releases-tracker/config.json` |
+
+Config is created automatically with empty values on first run.
+
+## Token security
+
+API tokens are stored in **plaintext** in `config.json`. Keep the file permissions restrictive (`chmod 600`).
+
+For Forgejo/Gitea, the token is only sent to hosts listed in `forgejo_trusted_hosts` in `config.json` (default: `["codeberg.org"]`). Add other trusted Forgejo instances there before adding repos from them.
+
 ## License
 
-```
-    Upstream Releases Tracker is an application that can be used to track releases
-    from remote code repositories, specifically GitHub and Forgejo API compatible instances.
-    Copyright (C) 2026  Mukund Yedunuthala
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published
-    by the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-```
+AGPL-3.0-or-later

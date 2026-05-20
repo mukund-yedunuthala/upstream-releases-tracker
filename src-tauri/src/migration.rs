@@ -35,18 +35,28 @@ pub fn run_migrations(datafile_path: &str) {
                             );
                             dirty = true;
                         }
+
+                        // Migration 5: coerce the removed ForgeKind::Unknown
+                        // variant to "GitHub" so old data files still deserialize.
+                        if obj.get("host_kind").and_then(|v| v.as_str()) == Some("Unknown") {
+                            obj.insert(
+                                "host_kind".to_string(),
+                                Value::String("GitHub".to_string()),
+                            );
+                            dirty = true;
+                        }
                     }
                 }
             }
 
             if dirty {
                 match JSONHandler::write_json_file::<Value>(datafile_path, &raw) {
-                    Ok(_) => eprintln!("repos.json migration completed successfully."),
-                    Err(e) => eprintln!("Failed to write migrated repos.json: {}", e),
+                    Ok(_) => log::info!("repos.json migration completed successfully."),
+                    Err(e) => log::error!("Failed to write migrated repos.json: {}", e),
                 }
             }
         }
-        Err(e) => eprintln!("repos.json migration skipped: {}", e),
+        Err(e) => log::warn!("repos.json migration skipped: {}", e),
     }
 }
 
@@ -66,7 +76,17 @@ pub fn run_config_migrations(config_path: &str) {
                     dirty = true;
                 }
 
-                // TODO(gitlab): Migration 2: add "gitlab_token" if absent.
+                // Migration 2: add "forgejo_trusted_hosts" if absent.
+                // Default: ["codeberg.org"] so existing Codeberg users keep working.
+                if !obj.contains_key("forgejo_trusted_hosts") {
+                    obj.insert(
+                        "forgejo_trusted_hosts".to_string(),
+                        serde_json::json!(["codeberg.org"]),
+                    );
+                    dirty = true;
+                }
+
+                // TODO(gitlab): Migration: add "gitlab_token" if absent.
                 // if !obj.contains_key("gitlab_token") {
                 //     obj.insert("gitlab_token".to_string(), Value::String(String::new()));
                 //     dirty = true;
@@ -75,11 +95,11 @@ pub fn run_config_migrations(config_path: &str) {
 
             if dirty {
                 match JSONHandler::write_json_file::<Value>(config_path, &raw) {
-                    Ok(_) => eprintln!("config.json migration completed successfully."),
-                    Err(e) => eprintln!("Failed to write migrated config.json: {}", e),
+                    Ok(_) => log::info!("config.json migration completed successfully."),
+                    Err(e) => log::error!("Failed to write migrated config.json: {}", e),
                 }
             }
         }
-        Err(e) => eprintln!("config.json migration skipped: {}", e),
+        Err(e) => log::warn!("config.json migration skipped: {}", e),
     }
 }

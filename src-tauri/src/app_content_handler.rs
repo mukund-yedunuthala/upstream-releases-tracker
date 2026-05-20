@@ -51,36 +51,15 @@ impl AppContentHandler {
         Self::write_to_data_file(datafilepath, &repos)
     }
 
-    pub fn upd_repo(
-        datafilepath: &str,
-        new_data: RepoData,
-        url: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut repos = Self::read_repos(datafilepath)?;
-        repos.insert(url.to_string(), new_data);
-        Self::write_to_data_file(datafilepath, &repos)
-    }
-
     pub fn upd_repo_status(
         datafilepath: &str,
         url: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let repos = Self::read_repos(datafilepath)?;
-
-        if let Some(old_data) = repos.get(url) {
-            let new_data = RepoData {
-                owner: old_data.owner.clone(),
-                repo_name: old_data.repo_name.clone(),
-                host_url: old_data.host_url.clone(),
-                host_kind: old_data.host_kind.clone(),
-                latest_release: old_data.latest_release.clone(),
-                system_version: old_data.latest_release.clone(), // intentional: marks as up to date
-            };
-            Self::upd_repo(datafilepath, new_data, url)?;
-        } else {
-            return Err(format!("Repo not found while updating status: {}", url).into());
-        }
-
-        Ok(())
+        let mut repos = Self::read_repos(datafilepath)?;
+        let entry = repos
+            .get_mut(url)
+            .ok_or_else(|| format!("Repo not found while updating status: {}", url))?;
+        entry.system_version = entry.latest_release.clone();
+        Self::write_to_data_file(datafilepath, &repos)
     }
 }

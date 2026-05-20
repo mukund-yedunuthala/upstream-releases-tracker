@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct JSONHandler;
 
@@ -27,7 +27,11 @@ impl JSONHandler {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let path = Path::new(file_path);
 
-        let tmp_path = path.with_extension("tmp");
+        // Write to a temp file alongside the target first.
+        // Append ".tmp" so repos.json → repos.json.tmp, not repos.tmp.
+        let mut tmp_os = path.as_os_str().to_owned();
+        tmp_os.push(".tmp");
+        let tmp_path = PathBuf::from(tmp_os);
 
         {
             let file = File::create(&tmp_path)

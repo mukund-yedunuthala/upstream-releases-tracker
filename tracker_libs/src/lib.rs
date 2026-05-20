@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 pub enum ForgeKind {
     GitHub,
     GitLab,
-    ForgejoCompatible,
-    Unknown,
+    ForgejoCompatible, // Covers both Gitea and Forgejo — identical API surface
 }
 
 impl Default for ForgeKind {
@@ -21,6 +20,9 @@ pub struct Config {
     pub gitlab_api_key: String,
     pub gitlab_endpoint: String,
     pub forgejo_token: String,
+    /// Allowlist of Forgejo/Gitea hostnames the token may be sent to.
+    /// The token is never transmitted to a host not on this list.
+    pub forgejo_trusted_hosts: Vec<String>,
 }
 
 impl Config {
@@ -31,10 +33,14 @@ impl Config {
             gitlab_api_key: String::from(""),
             gitlab_endpoint: String::from("https://gitlab.com/api/v4/projects/"),
             forgejo_token: String::new(),
+            forgejo_trusted_hosts: vec!["codeberg.org".to_string()],
         }
     }
 }
 
+// The BTreeMap key (the full URL) duplicates host_url + owner + repo_name. This
+// is intentional denormalization — O(log n) lookup by URL outweighs the minor
+// drift risk for this dataset size.
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct RepoData {
     pub owner: String,
