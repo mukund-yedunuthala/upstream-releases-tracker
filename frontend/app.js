@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getVersion } from "@tauri-apps/api/app";
+import { appLocalDataDir, join } from "@tauri-apps/api/path";
 import { Stronghold } from "@tauri-apps/plugin-stronghold";
 import { load as loadStore } from "@tauri-apps/plugin-store";
 import "@knadh/oat/oat.min.css";
@@ -399,8 +400,9 @@ const settingsInputs = {
 };
 
 async function initVault() {
-  const keyBytes = await invoke("get_vault_key");
-  const stronghold = await Stronghold.load(VAULT_FILE, keyBytes);
+  const vaultKey = await invoke("get_vault_key");
+  const vaultPath = await join(await appLocalDataDir(), VAULT_FILE);
+  const stronghold = await Stronghold.load(vaultPath, vaultKey);
   let client;
   try {
     client = await stronghold.loadClient(VAULT_CLIENT);
@@ -566,33 +568,37 @@ settingsSaveBtn.addEventListener("click", async () => {
 
   settingsSaveBtn.disabled = true;
   try {
-    // Persist secrets to Stronghold.
-    if (settingsState.vaultStore && settingsState.stronghold) {
-      for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
-        await settingsState.vaultStore.insert(
-          vaultKey,
-          stringToBytes(newKeys[field]),
-        );
-      }
-      await settingsState.stronghold.save();
+    // Persist secrets to Stronghold — vault must be initialised.
+    if (!settingsState.vaultStore || !settingsState.stronghold) {
+      throw new Error(
+        "Vault unavailable — API tokens not saved. Check the warning shown at startup.",
+      );
     }
+    for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
+      await settingsState.vaultStore.insert(
+        vaultKey,
+        stringToBytes(newKeys[field]),
+      );
+    }
+    await settingsState.stronghold.save();
 
-    // Persist endpoints to Store.
-    if (settingsState.endpointStore) {
-      await settingsState.endpointStore.set(
-        ENDPOINT_KEY_NAMES.github,
-        newEndpoints.github,
-      );
-      await settingsState.endpointStore.set(
-        ENDPOINT_KEY_NAMES.gitlab,
-        newEndpoints.gitlab,
-      );
-      await settingsState.endpointStore.set(
-        ENDPOINT_KEY_NAMES.forgejoHosts,
-        newEndpoints.forgejoHosts,
-      );
-      await settingsState.endpointStore.save();
+    // Persist endpoints to Store — endpoint store must also be ready.
+    if (!settingsState.endpointStore) {
+      throw new Error("Endpoint store unavailable — endpoints not saved.");
     }
+    await settingsState.endpointStore.set(
+      ENDPOINT_KEY_NAMES.github,
+      newEndpoints.github,
+    );
+    await settingsState.endpointStore.set(
+      ENDPOINT_KEY_NAMES.gitlab,
+      newEndpoints.gitlab,
+    );
+    await settingsState.endpointStore.set(
+      ENDPOINT_KEY_NAMES.forgejoHosts,
+      newEndpoints.forgejoHosts,
+    );
+    await settingsState.endpointStore.save();
 
     settingsState.keys = newKeys;
     settingsState.endpoints = newEndpoints;
@@ -611,6 +617,9 @@ async function initSettings() {
     await initVault();
   } catch (e) {
     console.warn("Stronghold init failed:", e);
+    ot.toast(String(e), "Vault unavailable — API tokens will not persist", {
+      variant: "warning",
+    });
   }
   try {
     await initEndpoints();

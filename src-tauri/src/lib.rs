@@ -291,35 +291,37 @@ async fn update_api_keys(
     Ok(())
 }
 
-// Domain-separated identifier mixed into the Stronghold password derivation so
-// vaults from different apps (or future versions) cannot collide.
-const VAULT_KEY_SALT: &str = "page.mukundyedunuthala.upstream-releases-tracker:v1";
-
+/// Returns a per-install random hex-encoded 32-byte key from the OS keyring.
+/// On first call the key is generated and stored; subsequent calls retrieve it.
+/// The string is passed to `Stronghold.load()` in JS, where the stronghold
+/// plugin delivers it to the Argon2id closure as a `&str`. If the keyring is
+/// unavailable the command returns an error so the frontend can surface it.
 #[tauri::command]
-fn get_vault_key() -> Result<Vec<u8>, String> {
-    let machine_id = read_machine_id();
-    let composite = format!("{}:{}", VAULT_KEY_SALT, machine_id);
-    Ok(composite.into_bytes())
-}
+fn get_vault_key() -> Result<String, String> {
+    use rand::RngCore;
 
-fn read_machine_id() -> String {
-    // Linux: /etc/machine-id is the canonical source.
-    if let Ok(content) = std::fs::read_to_string("/etc/machine-id") {
-        let trimmed = content.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
+    const SERVICE: &str = "page.mukundyedunuthala.upstream-releases-tracker";
+    const ACCOUNT: &str = "vault-key-v2";
+
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)
+        .map_err(|e| format!("Keyring init failed: {}", e))?;
+
+    match entry.get_password() {
+        Ok(stored) => Ok(stored),
+        Err(keyring::Error::NoEntry) => {
+            let mut bytes = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            let encoded: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            entry
+                .set_password(&encoded)
+                .map_err(|e| format!("Failed to store vault key in keyring: {}", e))?;
+            Ok(encoded)
         }
+        Err(e) => Err(format!(
+            "Keyring access failed — vault unavailable: {}",
+            e
+        )),
     }
-    // Linux fallback: dbus-managed copy on systems that use it.
-    if let Ok(content) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
-        let trimmed = content.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    // Last-resort fallback. Vaults keyed by this string are still encrypted
-    // but not bound to the host machine.
-    "upstream-releases-tracker-fallback".to_string()
 }
 
 #[tauri::command]
@@ -393,8 +395,19 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_stronghold::Builder::new(|password| {
-                use sha2::{Digest, Sha256};
-                Sha256::digest(password).to_vec()
+                use argon2::{Algorithm, Argon2, Params, Version};
+                // password = 32 random bytes from the OS keyring (get_vault_key).
+                // Argon2id produces a fixed-size 32-byte key with memory cost so
+                // brute-forcing the vault.hold file is expensive even if the raw
+                // keyring bytes are exposed.
+                let params = Params::new(19456, 2, 1, Some(32)).expect("argon2 params");
+                let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+                let salt = b"page.mukundyedunuthala.upstream-releases-tracker:v2";
+                let mut out = vec![0u8; 32];
+                argon
+                    .hash_password_into(password.as_bytes(), salt, &mut out)
+                    .expect("argon2 hash");
+                out
             })
             .build(),
         )
