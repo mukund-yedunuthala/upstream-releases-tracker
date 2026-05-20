@@ -160,14 +160,14 @@ Post-implementation audit of the work tracked in `docs/CHECKLIST-features.md` (G
 
 ## Batch 10b — High: persistence integrity & log handling
 
-- [ ] **#38** `frontend/app.js:609-630, 472-483` — `initSettings()` unconditionally calls `pushSettingsToBackend()` at startup, and `update_endpoints` writes `config.json`. Net effect: every launch overwrites `config.json` with whatever the frontend Store has, so a hand-edited `config.json` is silently clobbered on the next start. Make `update_endpoints` write-on-change only, or stop persisting endpoints from the frontend now that the Store is authoritative.
-- [ ] **#39** `src-tauri/src/lib.rs:261-278` — `update_endpoints` accepts arbitrary strings for `github_endpoint` and `gitlab_endpoint`. No HTTPS check, no `url::Url::parse`, no length cap. A misconfigured endpoint persists to disk and only surfaces at the next refresh.
-- [ ] **#40** `src-tauri/src/lib.rs:280-292` — `update_api_keys` accepts unbounded `String` for all three tokens. Add a sanity cap (e.g. ≤ 4096 chars) and trim/reject control characters.
-- [ ] **#41** `src-tauri/src/lib.rs:360-364` — `get_logs` loads the entire log file via `std::fs::read_to_string` before tailing. With `tauri-plugin-log` defaults and no rotation pinned (see #46) this is an unbounded read. Use `BufReader` from the end, or check `metadata().len()` and bail / seek for files past a threshold.
-- [ ] **#46** `src-tauri/src/lib.rs:392` — `tauri_plugin_log::Builder::new().build()` uses defaults: no `level_for`, no max file size, no rotation strategy. Pin the level (e.g. `Info` in release builds) and configure rotation so #41 doesn't grow into a real issue.
+- [x] **#38** `frontend/app.js:609-630, 472-483` — `initSettings()` unconditionally calls `pushSettingsToBackend()` at startup, and `update_endpoints` writes `config.json`. Net effect: every launch overwrites `config.json` with whatever the frontend Store has, so a hand-edited `config.json` is silently clobbered on the next start. Make `update_endpoints` write-on-change only, or stop persisting endpoints from the frontend now that the Store is authoritative.
+- [x] **#39** `src-tauri/src/lib.rs:261-278` — `update_endpoints` accepts arbitrary strings for `github_endpoint` and `gitlab_endpoint`. No HTTPS check, no `url::Url::parse`, no length cap. A misconfigured endpoint persists to disk and only surfaces at the next refresh.
+- [x] **#40** `src-tauri/src/lib.rs:280-292` — `update_api_keys` accepts unbounded `String` for all three tokens. Add a sanity cap (e.g. ≤ 4096 chars) and trim/reject control characters.
+- [x] **#41** `src-tauri/src/lib.rs:360-364` — `get_logs` loads the entire log file via `std::fs::read_to_string` before tailing. With `tauri-plugin-log` defaults and no rotation pinned (see #46) this is an unbounded read. Use `BufReader` from the end, or check `metadata().len()` and bail / seek for files past a threshold.
+- [x] **#46** `src-tauri/src/lib.rs:392` — `tauri_plugin_log::Builder::new().build()` uses defaults: no `level_for`, no max file size, no rotation strategy. Pin the level (e.g. `Info` in release builds) and configure rotation so #41 doesn't grow into a real issue.
 - [ ] Smoke test: hand-edit `config.json` → restart → verify edits survive (validates #38)
 - [ ] Smoke test: >100MB log → call `get_logs` → no OOM (validates #41)
-- [ ] **Commit** — `fix(backend): config persistence integrity & log bounds (BUGS #38 #39 #40 #41 #46)`
+- [x] **Commit** — `fix(backend): config persistence integrity & log bounds (BUGS #38 #39 #40 #41 #46)`
 
 ---
 

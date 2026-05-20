@@ -258,6 +258,46 @@ async fn get_endpoints(state: tauri::State<'_, AppState>) -> Result<Endpoints, S
     })
 }
 
+fn validate_endpoint_url(url: &str, field: &str) -> Result<(), String> {
+    if url.len() > 2048 {
+        return Err(format!("{} exceeds maximum length of 2048 characters", field));
+    }
+    let parsed = url::Url::parse(url).map_err(|e| format!("{} is not a valid URL: {}", field, e))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "{} must use HTTPS (got '{}')",
+            field,
+            parsed.scheme()
+        ));
+    }
+    if parsed.host_str().is_none() {
+        return Err(format!("{} has no host", field));
+    }
+    Ok(())
+}
+
+fn validate_forgejo_host(host: &str) -> Result<(), String> {
+    if host.is_empty() {
+        return Err("Forgejo host entry must not be empty".to_string());
+    }
+    if host.len() > 253 {
+        return Err(format!(
+            "Forgejo host '{}' exceeds maximum length of 253 characters",
+            host
+        ));
+    }
+    if !host.is_ascii() {
+        return Err(format!("Forgejo host '{}' must be ASCII-only", host));
+    }
+    if host.contains('/') || host.contains(':') {
+        return Err(format!(
+            "Forgejo host '{}' must be a bare hostname (no scheme or path)",
+            host
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn update_endpoints(
     state: tauri::State<'_, AppState>,
@@ -265,16 +305,41 @@ async fn update_endpoints(
     gitlab_endpoint: String,
     forgejo_trusted_hosts: Vec<String>,
 ) -> Result<(), String> {
-    // Update in-memory config and snapshot a persistable (scrubbed) copy.
-    let to_persist = {
+    // Validate inputs before touching in-memory state.
+    validate_endpoint_url(&github_endpoint, "github_endpoint")?;
+    validate_endpoint_url(&gitlab_endpoint, "gitlab_endpoint")?;
+    for host in &forgejo_trusted_hosts {
+        validate_forgejo_host(host)?;
+    }
+
+    // Update in-memory config; only write to disk when something changed.
+    let (to_persist, changed) = {
         let mut cfg = state.config.lock().await;
+        let changed = cfg.github_endpoint != github_endpoint
+            || cfg.gitlab_endpoint != gitlab_endpoint
+            || cfg.forgejo_trusted_hosts != forgejo_trusted_hosts;
         cfg.github_endpoint = github_endpoint;
         cfg.gitlab_endpoint = gitlab_endpoint;
         cfg.forgejo_trusted_hosts = forgejo_trusted_hosts;
-        scrub_keys(&cfg)
+        (scrub_keys(&cfg), changed)
     };
-    config_handler::write_config(&to_persist)
-        .map_err(|e| format!("Failed to persist endpoints: {}", e))
+
+    if changed {
+        config_handler::write_config(&to_persist)
+            .map_err(|e| format!("Failed to persist endpoints: {}", e))?;
+    }
+    Ok(())
+}
+
+fn sanitize_token(token: &str, field: &str) -> Result<String, String> {
+    if token.len() > 4096 {
+        return Err(format!("{} exceeds maximum length of 4096 characters", field));
+    }
+    let trimmed = token.trim();
+    if trimmed.chars().any(|c| c.is_ascii_control()) {
+        return Err(format!("{} contains control characters", field));
+    }
+    Ok(trimmed.to_string())
 }
 
 #[tauri::command]
@@ -284,6 +349,9 @@ async fn update_api_keys(
     gitlab_api_key: String,
     forgejo_token: String,
 ) -> Result<(), String> {
+    let github_api_key = sanitize_token(&github_api_key, "github_api_key")?;
+    let gitlab_api_key = sanitize_token(&gitlab_api_key, "gitlab_api_key")?;
+    let forgejo_token = sanitize_token(&forgejo_token, "forgejo_token")?;
     let mut cfg = state.config.lock().await;
     cfg.github_api_key = github_api_key;
     cfg.gitlab_api_key = gitlab_api_key;
@@ -326,6 +394,12 @@ fn get_vault_key() -> Result<String, String> {
 
 #[tauri::command]
 async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, String> {
+    use std::io::{BufRead, Read, Seek, SeekFrom};
+
+    const MAX_READ_BYTES: u64 = 262_144; // 256 KiB tail window
+    const MAX_LIMIT: usize = 1000;
+    let limit = limit.min(MAX_LIMIT);
+
     let log_dir = app
         .path()
         .app_log_dir()
@@ -359,11 +433,39 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
         return Ok(vec![]);
     };
 
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read log file: {}", e))?;
-    let lines: Vec<&str> = content.lines().collect();
-    let start = lines.len().saturating_sub(limit);
-    Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+    let file_len = std::fs::metadata(&path)
+        .map_err(|e| format!("Failed to stat log file: {}", e))?
+        .len();
+
+    let mut file = std::fs::File::open(&path)
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    // For large files seek to the tail window; for small files read from start.
+    if file_len > MAX_READ_BYTES {
+        file.seek(SeekFrom::End(-(MAX_READ_BYTES as i64)))
+            .map_err(|e| format!("Failed to seek log file: {}", e))?;
+        // Discard the first (potentially partial) line after the seek.
+        let mut discard = String::new();
+        let mut reader = std::io::BufReader::new(&mut file);
+        reader
+            .read_line(&mut discard)
+            .map_err(|e| format!("Failed to skip partial line: {}", e))?;
+        let mut buf = String::new();
+        reader
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read log file: {}", e))?;
+        let lines: Vec<&str> = buf.lines().collect();
+        let start = lines.len().saturating_sub(limit);
+        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+    } else {
+        let mut buf = String::new();
+        std::io::BufReader::new(file)
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read log file: {}", e))?;
+        let lines: Vec<&str> = buf.lines().collect();
+        let start = lines.len().saturating_sub(limit);
+        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -391,7 +493,13 @@ pub fn run() {
             lock: tokio::sync::Mutex::new(()),
             config: tokio::sync::Mutex::new(config),
         })
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(2_097_152)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_stronghold::Builder::new(|password| {

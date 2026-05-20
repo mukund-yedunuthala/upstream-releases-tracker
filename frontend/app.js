@@ -626,10 +626,21 @@ async function initSettings() {
   } catch (e) {
     console.warn("Store init failed:", e);
   }
+  // Push only API keys to the backend at startup (tokens never persist to
+  // config.json — they must be loaded from the vault each launch). Endpoints
+  // are intentionally NOT pushed here: update_endpoints is write-on-change
+  // in Rust, but the config.json read on startup already loads them, so an
+  // unconditional push here was clobbering hand-edited config.json on every
+  // launch (#38). Endpoint updates travel to the backend only when the user
+  // explicitly saves settings.
   try {
-    await pushSettingsToBackend();
+    await invoke("update_api_keys", {
+      githubApiKey: settingsState.keys.github,
+      gitlabApiKey: settingsState.keys.gitlab,
+      forgejoToken: settingsState.keys.forgejo,
+    });
   } catch (e) {
-    console.warn("Pushing settings to backend failed:", e);
+    console.warn("Pushing API keys to backend failed:", e);
   }
   try {
     settingsAppVersion.textContent = `v${await getVersion()}`;
