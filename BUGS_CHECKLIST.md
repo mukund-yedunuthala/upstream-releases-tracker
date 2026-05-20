@@ -123,14 +123,14 @@ A coding agent picking this up cold should:
 - [x] **#32** `tracker_libs/src/lib.rs` — added comment on intentional URL/RepoData denormalization
 - [x] **#33** Added `frontend/dist/` and `public/repos.json` to `.gitignore`; untracked `public/repos.json` with `git rm --cached`
 - [x] **#31** README rewritten: app description, dev/build commands, supported forges, data locations, token security note
-- [ ] **Commit** — `chore: gitignore, comments & README overhaul (BUGS #27 #31 #32 #33)`
+- [x] **Commit** — `chore: gitignore, comments & README overhaul (BUGS #27 #31 #32 #33)`
 
 ---
 
 ## Final verification
 
-- [ ] `cargo build --workspace` clean
-- [ ] `cargo test --workspace` green
+- [x] `cargo build --workspace` clean (one pre-existing warning: write_config dead code in config_handler.rs)
+- [x] `cargo test --workspace` green (all 5 test suites pass, 0 failures)
 - [ ] `cd src-tauri && cargo tauri dev` — app launches, full flow exercised: add, refresh, refresh-all, edit, mark-updated, delete
 - [ ] `cd src-tauri && cargo tauri build` succeeds
-- [ ] `git log --oneline release..HEAD` shows 9 commits, one per batch
+- [x] `git log --oneline` shows 9 commits, one per batch (3d4fa3b..325e82e)

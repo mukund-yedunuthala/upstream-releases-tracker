@@ -17,7 +17,6 @@ fn http_client() -> &'static Client {
     })
 }
 
-/// Parses owner and repo name from any forge URL.
 fn parse_url(url: &str) -> Result<(String, String), String> {
     if url.len() > 2048 {
         return Err("URL exceeds maximum allowed length of 2048 characters".to_string());
@@ -44,7 +43,6 @@ fn parse_url(url: &str) -> Result<(String, String), String> {
     Ok((owner, repo))
 }
 
-/// Dispatches to the correct API implementation based on the user-selected forge kind.
 async fn api_call(
     config: &Config,
     owner: &str,

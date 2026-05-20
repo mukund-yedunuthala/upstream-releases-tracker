@@ -43,11 +43,7 @@ impl JSONHandler {
                 .map_err(|e| format!("Failed to serialize JSON to '{}': {}", tmp_path.display(), e))?;
         }
 
-        // Atomically replace the target with the temp file only after a
-        // successful write. This prevents data loss if serialization fails
-        // or the process is killed mid-write.
         fs::rename(&tmp_path, path).map_err(|e| {
-            // Best-effort cleanup of the temp file if rename fails.
             let _ = fs::remove_file(&tmp_path);
             format!(
                 "Failed to finalize write to '{}': {}",

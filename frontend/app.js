@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-
+import { openUrl } from "@tauri-apps/plugin-opener";
+import "@knadh/oat/oat.min.css";
+import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
 
@@ -46,7 +48,21 @@ repoGrid.addEventListener("click", (e) => {
   }
 });
 
-// Maps ForgeKind enum variants to display labels
+document.addEventListener("click", async (e) => {
+  const anchor = e.target.closest("a[href]");
+  if (!anchor) return;
+
+  const href = anchor.getAttribute("href");
+  if (!href || href.startsWith("#")) return;
+
+  e.preventDefault();
+  try {
+    await openUrl(href);
+  } catch (err) {
+    ot.toast(String(err), "Failed to open link", { variant: "danger" });
+  }
+});
+
 function forgeLabel(hostKind) {
   switch (hostKind) {
     case "GitHub":
@@ -60,7 +76,6 @@ function forgeLabel(hostKind) {
   }
 }
 
-// Build a card from RepoData
 function buildCard(url, data) {
   const isUpToDate =
     !!data.system_version && data.system_version === data.latest_release;
@@ -167,8 +182,8 @@ async function loadRepos() {
 // Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
-  const forge = hostSelect.value; // "GitHub" | "GitLab" | "ForgejoCompatible"
-  const host = extractHostUrl(url); // "github.com", "codeberg.org", etc.
+  const forge = hostSelect.value;
+  const host = extractHostUrl(url);
 
   if (!url) {
     ot.toast("Please enter a repository URL", "Missing URL", {
@@ -312,5 +327,4 @@ function isValidRepoUrl(url) {
   );
 }
 
-// Initial load
 loadRepos();
