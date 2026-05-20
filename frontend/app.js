@@ -46,11 +46,9 @@ const textDecoder = new TextDecoder();
 
 function bytesToString(bytes) {
   if (!bytes) return "";
-  try {
-    return textDecoder.decode(Uint8Array.from(bytes));
-  } catch {
-    return "";
-  }
+  // Let decode errors propagate — callers must handle them so a corrupted
+  // vault entry is distinguishable from an unset one (#45).
+  return textDecoder.decode(Uint8Array.from(bytes));
 }
 
 function stringToBytes(value) {
@@ -414,7 +412,18 @@ async function initVault() {
 
   for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
     const stored = await settingsState.vaultStore.get(vaultKey);
-    settingsState.keys[field] = bytesToString(stored);
+    try {
+      settingsState.keys[field] = bytesToString(stored);
+      settingsState.corruptedKeys = settingsState.corruptedKeys || {};
+      settingsState.corruptedKeys[field] = false;
+    } catch {
+      // Mark this field as corrupted — populateSettingsInputs will disable
+      // the input so the user cannot silently overwrite a still-present but
+      // unreadable secret (#45).
+      settingsState.keys[field] = "";
+      settingsState.corruptedKeys = settingsState.corruptedKeys || {};
+      settingsState.corruptedKeys[field] = true;
+    }
   }
 }
 
@@ -460,13 +469,18 @@ async function initEndpoints() {
       console.warn("get_endpoints fallback failed:", e);
     }
   } else {
+    // Distinguish "null = never saved" from "[] = intentional empty list" (#44).
+    // Only fall back to defaults when the key was never written (null/undefined).
+    const forgejoHosts =
+      stored.forgejoHosts === null || stored.forgejoHosts === undefined
+        ? [...ENDPOINT_DEFAULTS.forgejoHosts]
+        : Array.isArray(stored.forgejoHosts)
+          ? stored.forgejoHosts
+          : [...ENDPOINT_DEFAULTS.forgejoHosts];
     settingsState.endpoints = {
       github: stored.github || ENDPOINT_DEFAULTS.github,
       gitlab: stored.gitlab || ENDPOINT_DEFAULTS.gitlab,
-      forgejoHosts:
-        Array.isArray(stored.forgejoHosts) && stored.forgejoHosts.length > 0
-          ? stored.forgejoHosts
-          : [...ENDPOINT_DEFAULTS.forgejoHosts],
+      forgejoHosts,
     };
   }
 }
@@ -485,9 +499,18 @@ async function pushSettingsToBackend() {
 }
 
 function populateSettingsInputs() {
-  settingsInputs.github.value = settingsState.keys.github;
-  settingsInputs.gitlab.value = settingsState.keys.gitlab;
-  settingsInputs.forgejo.value = settingsState.keys.forgejo;
+  const corrupted = settingsState.corruptedKeys || {};
+  for (const field of ["github", "gitlab", "forgejo"]) {
+    const input = settingsInputs[field];
+    if (corrupted[field]) {
+      input.value = "";
+      input.disabled = true;
+      input.placeholder = "⚠ Vault entry corrupted — clear vault to reset";
+    } else {
+      input.value = settingsState.keys[field];
+      input.disabled = false;
+    }
+  }
   settingsInputs.githubEndpoint.value = settingsState.endpoints.github;
   settingsInputs.gitlabEndpoint.value = settingsState.endpoints.gitlab;
   settingsInputs.forgejoHosts.value =

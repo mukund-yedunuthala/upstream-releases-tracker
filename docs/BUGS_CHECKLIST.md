@@ -184,9 +184,9 @@ Post-implementation audit of the work tracked in `docs/CHECKLIST-features.md` (G
 
 ## Batch 10d — UI/UX & CSP cleanup
 
-- [ ] **#44** `frontend/app.js:546-551, 460-469` — Saving an empty Forgejo hosts textarea persists `[]`, but `initEndpoints` reads it back through `Array.isArray(stored.forgejoHosts) && stored.forgejoHosts.length > 0 ? … : [...ENDPOINT_DEFAULTS.forgejoHosts]` and silently restores `codeberg.org`. No way to express an intentional empty allowlist.
-- [ ] **#45** `frontend/app.js:46-53` — `bytesToString` swallows `TextDecoder` errors and returns `""`. A corrupted vault entry is indistinguishable from "unset"; the next save can then overwrite the still-present-but-unreadable secret. Surface the error to the UI (toast + leave the field disabled).
-- [ ] **#47** `src-tauri/tauri.conf.json:23` — CSP is now restrictive, but still omits `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`. `default-src 'self'` already covers `object-src`. Add the three above for defense-in-depth.
-- [ ] **#48** `frontend/index.html:49, 87` — Both `<dialog>` elements still carry the experimental `closedby="any"` attribute even though BUGS.md #24 added the JS cancel fallback. Older WebView2 ignores it harmlessly, but it's dead syntax — drop it now that the JS path is the source of truth.
+- [x] **#44** `frontend/app.js:546-551, 460-469` — Saving an empty Forgejo hosts textarea persists `[]`, but `initEndpoints` reads it back through `Array.isArray(stored.forgejoHosts) && stored.forgejoHosts.length > 0 ? … : [...ENDPOINT_DEFAULTS.forgejoHosts]` and silently restores `codeberg.org`. No way to express an intentional empty allowlist.
+- [x] **#45** `frontend/app.js:46-53` — `bytesToString` swallows `TextDecoder` errors and returns `""`. A corrupted vault entry is indistinguishable from "unset"; the next save can then overwrite the still-present-but-unreadable secret. Surface the error to the UI (toast + leave the field disabled).
+- [x] **#47** `src-tauri/tauri.conf.json:23` — CSP is now restrictive, but still omits `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`. `default-src 'self'` already covers `object-src`. Add the three above for defense-in-depth.
+- [x] **#48** `frontend/index.html:49, 87` — Both `<dialog>` elements still carry the experimental `closedby="any"` attribute even though BUGS.md #24 added the JS cancel fallback. Older WebView2 ignores it harmlessly, but it's dead syntax — drop it now that the JS path is the source of truth.
 - [ ] Smoke test: clear Forgejo hosts → save → reopen → empty list persists (validates #44)
-- [ ] **Commit** — `chore: settings UX, vault decode errors & CSP hardening (BUGS #44 #45 #47 #48)`
+- [x] **Commit** — `chore: settings UX, vault decode errors & CSP hardening (BUGS #44 #45 #47 #48)`
