@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 // State
 let editingUrl = null;
-let editingHostKind = null;
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -30,9 +29,6 @@ function forgeLabel(hostKind) {
 
 // Build a card from RepoData
 function buildCard(url, data) {
-  const id = btoa(url)
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 12);
   const isUpToDate =
     !!data.system_version && data.system_version === data.latest_release;
   const badgeClass = isUpToDate ? "success" : "warning";
@@ -100,7 +96,7 @@ function buildCard(url, data) {
   // Edit
   card
     .querySelector('[data-action="edit"]')
-    .addEventListener("click", () => openEditDialog(url, name, data.host));
+    .addEventListener("click", () => openEditDialog(url, name, data.host_kind));
 
   // Delete trigger: show the inline popover
   const deletePopover = card.querySelector(".delete-popover");
@@ -247,7 +243,6 @@ async function handleDelete(url) {
 // Edit dialog open
 function openEditDialog(url, name, hostKind) {
   editingUrl = url;
-  editingHostKind = hostKind;
   editUrlInput.value = url;
   editHostSelect.value = hostKind;
   editDialog.showModal();
@@ -256,7 +251,6 @@ function openEditDialog(url, name, hostKind) {
 editDialog.addEventListener("close", async () => {
   if (editDialog.returnValue !== "save") {
     editingUrl = null;
-    editingHostKind = null;
     return;
   }
 
@@ -279,14 +273,13 @@ editDialog.addEventListener("close", async () => {
 
   try {
     await invoke("delete_repo", { url: editingUrl });
-    await invoke("add_repo", { url: newUrl, host_url, host_kind: newHostKind });
+    await invoke("add_repo", { url: newUrl, host: host_url, forge: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Update failed", { variant: "danger" });
   } finally {
     editingUrl = null;
-    editingHostKind = null;
   }
 });
 
