@@ -13,6 +13,12 @@ impl Default for ForgeKind {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config::new()
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct Config {
     pub github_api_key: String,

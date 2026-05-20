@@ -80,6 +80,17 @@ async fn github_api_call(
     let mut request = http_client().get(&api_url);
 
     if !config.github_api_key.is_empty() {
+        // Validate endpoint host before sending the token to prevent exfiltration
+        // if github_endpoint is misconfigured to an attacker-controlled URL.
+        let parsed = url::Url::parse(&api_url)
+            .map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
+        if parsed.host_str() != Some("api.github.com") {
+            return Err(format!(
+                "GitHub API token refused: endpoint host '{}' is not 'api.github.com'. \
+                 Check github_endpoint in config.json.",
+                parsed.host_str().unwrap_or("(none)")
+            ));
+        }
         request = request.header("Authorization", format!("Bearer {}", config.github_api_key));
     }
 

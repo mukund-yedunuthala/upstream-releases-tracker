@@ -309,8 +309,7 @@ editDialog.addEventListener("close", async () => {
   const host_url = extractHostUrl(newUrl);
 
   try {
-    await invoke("delete_repo", { url: editingUrl });
-    await invoke("add_repo", { url: newUrl, host: host_url, forge: newHostKind });
+    await invoke("edit_repo", { oldUrl: editingUrl, newUrl, host: host_url, forge: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
