@@ -7,17 +7,19 @@ mod migration;
 use crate::git_api_handler::GitHandler;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use tauri::Manager;
 use tracker_libs::{Config, ForgeKind, RepoData};
 
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 
 /// Shared app state: the data-file path, a mutex that serializes all
-/// read-modify-write operations on it, and the config loaded once at startup.
-/// HTTP calls must happen *outside* the data lock so the app stays responsive.
+/// read-modify-write operations on it, and the live runtime config. Config
+/// is held under its own mutex so the frontend can update endpoints / push
+/// Stronghold-sourced API keys at runtime without restarting the app.
 struct AppState {
     path: String,
     lock: tokio::sync::Mutex<()>,
-    config: Config,
+    config: tokio::sync::Mutex<Config>,
 }
 
 fn datafile_path_string() -> Result<String, String> {
@@ -31,6 +33,17 @@ fn datafile_path_string() -> Result<String, String> {
         .to_str()
         .ok_or("Failed to convert datafile path to string")
         .map(|s| s.to_string())?)
+}
+
+// API key fields are runtime-only — they live in Stronghold on disk and in
+// the in-memory Config when populated by the frontend. This ensures we never
+// write them back to config.json when persisting endpoint changes.
+fn scrub_keys(config: &Config) -> Config {
+    let mut c = config.clone();
+    c.github_api_key = String::new();
+    c.gitlab_api_key = String::new();
+    c.forgejo_token = String::new();
+    c
 }
 
 #[tauri::command]
@@ -68,9 +81,10 @@ async fn refresh_repo(
             .ok_or_else(|| format!("Repo not found: {}", url))?
     };
 
-    // 2. HTTP call — lock is not held during network I/O.
+    // 2. Snapshot the config separately, then HTTP call without any lock held.
+    let config_snapshot = state.config.lock().await.clone();
     let result = GitHandler {}
-        .refresh_repo(&state.config, &repo)
+        .refresh_repo(&config_snapshot, &repo)
         .await
         .map_err(|e| format!("Failed to refresh repo: {}", e))?;
 
@@ -94,9 +108,10 @@ async fn add_repo(
     forge: ForgeKind,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    // HTTP call first, outside the lock.
+    // HTTP call first, outside the data lock.
+    let config_snapshot = state.config.lock().await.clone();
     let new_repo_data = GitHandler {}
-        .post_request(&state.config, url.clone(), host, forge)
+        .post_request(&config_snapshot, url.clone(), host, forge)
         .await
         .map_err(|e| format!("Error adding repository: {}", e))?;
 
@@ -121,12 +136,16 @@ async fn edit_repo(
         let _guard = state.lock.lock().await;
         let repos = app_content_handler::read_repos(&state.path)
             .map_err(|e| format!("Failed to read repos: {}", e))?;
-        repos.get(&old_url).map(|r| r.system_version.clone()).unwrap_or_default()
+        repos
+            .get(&old_url)
+            .map(|r| r.system_version.clone())
+            .unwrap_or_default()
     };
 
-    // 2. HTTP call for the new URL — lock is not held.
+    // 2. HTTP call for the new URL — no lock held.
+    let config_snapshot = state.config.lock().await.clone();
     let mut new_repo_data = GitHandler {}
-        .post_request(&state.config, new_url.clone(), host, forge)
+        .post_request(&config_snapshot, new_url.clone(), host, forge)
         .await
         .map_err(|e| format!("Error fetching new repo data: {}", e))?;
 
@@ -167,11 +186,14 @@ async fn refresh_all(
     };
 
     if repos_snapshot.is_empty() {
-        return Ok(RefreshAllResult { ok: vec![], err: vec![] });
+        return Ok(RefreshAllResult {
+            ok: vec![],
+            err: vec![],
+        });
     }
 
-    // 2. Parallel HTTP calls — lock is not held during network I/O.
-    let config = state.config.clone();
+    // 2. Parallel HTTP calls — no lock held during network I/O.
+    let config = state.config.lock().await.clone();
 
     let handles: Vec<_> = repos_snapshot
         .iter()
@@ -217,6 +239,131 @@ async fn refresh_all(
     })
 }
 
+// ── New commands for Settings UI ────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct Endpoints {
+    github_endpoint: String,
+    gitlab_endpoint: String,
+    forgejo_trusted_hosts: Vec<String>,
+}
+
+#[tauri::command]
+async fn get_endpoints(state: tauri::State<'_, AppState>) -> Result<Endpoints, String> {
+    let cfg = state.config.lock().await;
+    Ok(Endpoints {
+        github_endpoint: cfg.github_endpoint.clone(),
+        gitlab_endpoint: cfg.gitlab_endpoint.clone(),
+        forgejo_trusted_hosts: cfg.forgejo_trusted_hosts.clone(),
+    })
+}
+
+#[tauri::command]
+async fn update_endpoints(
+    state: tauri::State<'_, AppState>,
+    github_endpoint: String,
+    gitlab_endpoint: String,
+    forgejo_trusted_hosts: Vec<String>,
+) -> Result<(), String> {
+    // Update in-memory config and snapshot a persistable (scrubbed) copy.
+    let to_persist = {
+        let mut cfg = state.config.lock().await;
+        cfg.github_endpoint = github_endpoint;
+        cfg.gitlab_endpoint = gitlab_endpoint;
+        cfg.forgejo_trusted_hosts = forgejo_trusted_hosts;
+        scrub_keys(&cfg)
+    };
+    config_handler::write_config(&to_persist)
+        .map_err(|e| format!("Failed to persist endpoints: {}", e))
+}
+
+#[tauri::command]
+async fn update_api_keys(
+    state: tauri::State<'_, AppState>,
+    github_api_key: String,
+    gitlab_api_key: String,
+    forgejo_token: String,
+) -> Result<(), String> {
+    let mut cfg = state.config.lock().await;
+    cfg.github_api_key = github_api_key;
+    cfg.gitlab_api_key = gitlab_api_key;
+    cfg.forgejo_token = forgejo_token;
+    Ok(())
+}
+
+// Domain-separated identifier mixed into the Stronghold password derivation so
+// vaults from different apps (or future versions) cannot collide.
+const VAULT_KEY_SALT: &str = "page.mukundyedunuthala.upstream-releases-tracker:v1";
+
+#[tauri::command]
+fn get_vault_key() -> Result<Vec<u8>, String> {
+    let machine_id = read_machine_id();
+    let composite = format!("{}:{}", VAULT_KEY_SALT, machine_id);
+    Ok(composite.into_bytes())
+}
+
+fn read_machine_id() -> String {
+    // Linux: /etc/machine-id is the canonical source.
+    if let Ok(content) = std::fs::read_to_string("/etc/machine-id") {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // Linux fallback: dbus-managed copy on systems that use it.
+    if let Ok(content) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // Last-resort fallback. Vaults keyed by this string are still encrypted
+    // but not bound to the host machine.
+    "upstream-releases-tracker-fallback".to_string()
+}
+
+#[tauri::command]
+async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, String> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Could not get log dir: {}", e))?;
+
+    if !log_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    // Pick the most recently modified .log file in the log dir.
+    let mut latest: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
+    let entries = std::fs::read_dir(&log_dir)
+        .map_err(|e| format!("Failed to read log dir: {}", e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("log") {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(modified) = meta.modified() {
+                match &latest {
+                    None => latest = Some((path, modified)),
+                    Some((_, prev)) if modified > *prev => latest = Some((path, modified)),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let Some((path, _)) = latest else {
+        return Ok(vec![]);
+    };
+
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read log file: {}", e))?;
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines.len().saturating_sub(limit);
+    Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_path = datafile_path_string()
@@ -229,7 +376,10 @@ pub fn run() {
     migration::run_config_migrations(&config_path);
 
     let config = config_handler::read_config().unwrap_or_else(|e| {
-        eprintln!("Warning: failed to load config ({}). Starting with defaults.", e);
+        eprintln!(
+            "Warning: failed to load config ({}). Starting with defaults.",
+            e
+        );
         Config::default()
     });
 
@@ -237,10 +387,18 @@ pub fn run() {
         .manage(AppState {
             path: data_path,
             lock: tokio::sync::Mutex::new(()),
-            config,
+            config: tokio::sync::Mutex::new(config),
         })
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_stronghold::Builder::new(|password| {
+                use sha2::{Digest, Sha256};
+                Sha256::digest(password).to_vec()
+            })
+            .build(),
+        )
+        .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_repos,
             add_repo,
@@ -249,6 +407,11 @@ pub fn run() {
             refresh_repo,
             refresh_all,
             mark_as_updated,
+            get_endpoints,
+            update_endpoints,
+            update_api_keys,
+            get_vault_key,
+            get_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,9 +1,60 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getVersion } from "@tauri-apps/api/app";
+import { Stronghold } from "@tauri-apps/plugin-stronghold";
+import { load as loadStore } from "@tauri-apps/plugin-store";
 import "@knadh/oat/oat.min.css";
 import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
+
+// Settings runtime state — populated at startup, written back on save.
+const VAULT_FILE = "vault.hold";
+const VAULT_CLIENT = "api-keys";
+const STORE_FILE = "endpoints.store.json";
+const VAULT_KEY_NAMES = {
+  github: "github_api_key",
+  gitlab: "gitlab_api_key",
+  forgejo: "forgejo_token",
+};
+const ENDPOINT_KEY_NAMES = {
+  github: "github_endpoint",
+  gitlab: "gitlab_endpoint",
+  forgejoHosts: "forgejo_trusted_hosts",
+};
+const ENDPOINT_DEFAULTS = {
+  github: "https://api.github.com/repos/",
+  gitlab: "https://gitlab.com/api/v4/projects/",
+  forgejoHosts: ["codeberg.org"],
+};
+
+const settingsState = {
+  stronghold: null,
+  vaultStore: null,
+  endpointStore: null,
+  keys: { github: "", gitlab: "", forgejo: "" },
+  endpoints: {
+    github: ENDPOINT_DEFAULTS.github,
+    gitlab: ENDPOINT_DEFAULTS.gitlab,
+    forgejoHosts: [...ENDPOINT_DEFAULTS.forgejoHosts],
+  },
+};
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+function bytesToString(bytes) {
+  if (!bytes) return "";
+  try {
+    return textDecoder.decode(Uint8Array.from(bytes));
+  } catch {
+    return "";
+  }
+}
+
+function stringToBytes(value) {
+  return Array.from(textEncoder.encode(value ?? ""));
+}
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -326,4 +377,257 @@ function isValidRepoUrl(url) {
   );
 }
 
+// ── Settings dialog ────────────────────────────────────────────────────────
+const settingsDialog = document.getElementById("settings-dialog");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsSaveBtn = document.getElementById("settings-save-btn");
+const settingsTabs = document.getElementById("settings-tabs");
+const settingsSections = document.querySelectorAll(".settings-section");
+const settingsShowKeys = document.getElementById("settings-show-keys");
+const settingsLogsRefresh = document.getElementById("settings-logs-refresh");
+const settingsLogsOutput = document.getElementById("settings-logs-output");
+const settingsLogsStatus = document.getElementById("settings-logs-status");
+const settingsAppVersion = document.getElementById("settings-app-version");
+
+const settingsInputs = {
+  github: document.getElementById("settings-github-key"),
+  gitlab: document.getElementById("settings-gitlab-key"),
+  forgejo: document.getElementById("settings-forgejo-key"),
+  githubEndpoint: document.getElementById("settings-github-endpoint"),
+  gitlabEndpoint: document.getElementById("settings-gitlab-endpoint"),
+  forgejoHosts: document.getElementById("settings-forgejo-hosts"),
+};
+
+async function initVault() {
+  const keyBytes = await invoke("get_vault_key");
+  const stronghold = await Stronghold.load(VAULT_FILE, keyBytes);
+  let client;
+  try {
+    client = await stronghold.loadClient(VAULT_CLIENT);
+  } catch {
+    client = await stronghold.createClient(VAULT_CLIENT);
+  }
+  settingsState.stronghold = stronghold;
+  settingsState.vaultStore = client.getStore();
+
+  for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
+    const stored = await settingsState.vaultStore.get(vaultKey);
+    settingsState.keys[field] = bytesToString(stored);
+  }
+}
+
+async function initEndpoints() {
+  const store = await loadStore(STORE_FILE, { autoSave: false });
+  settingsState.endpointStore = store;
+
+  const stored = {
+    github: await store.get(ENDPOINT_KEY_NAMES.github),
+    gitlab: await store.get(ENDPOINT_KEY_NAMES.gitlab),
+    forgejoHosts: await store.get(ENDPOINT_KEY_NAMES.forgejoHosts),
+  };
+
+  // First-run fallback: read endpoints from config.json (the backend) and
+  // seed the Store so subsequent runs read from there directly.
+  if (!stored.github && !stored.gitlab && !stored.forgejoHosts) {
+    try {
+      const backend = await invoke("get_endpoints");
+      settingsState.endpoints = {
+        github: backend.github_endpoint || ENDPOINT_DEFAULTS.github,
+        gitlab: backend.gitlab_endpoint || ENDPOINT_DEFAULTS.gitlab,
+        forgejoHosts:
+          backend.forgejo_trusted_hosts &&
+          backend.forgejo_trusted_hosts.length > 0
+            ? backend.forgejo_trusted_hosts
+            : [...ENDPOINT_DEFAULTS.forgejoHosts],
+      };
+      await store.set(
+        ENDPOINT_KEY_NAMES.github,
+        settingsState.endpoints.github,
+      );
+      await store.set(
+        ENDPOINT_KEY_NAMES.gitlab,
+        settingsState.endpoints.gitlab,
+      );
+      await store.set(
+        ENDPOINT_KEY_NAMES.forgejoHosts,
+        settingsState.endpoints.forgejoHosts,
+      );
+      await store.save();
+    } catch (e) {
+      // Fall through to defaults — backend may not be ready on first launch.
+      console.warn("get_endpoints fallback failed:", e);
+    }
+  } else {
+    settingsState.endpoints = {
+      github: stored.github || ENDPOINT_DEFAULTS.github,
+      gitlab: stored.gitlab || ENDPOINT_DEFAULTS.gitlab,
+      forgejoHosts:
+        Array.isArray(stored.forgejoHosts) && stored.forgejoHosts.length > 0
+          ? stored.forgejoHosts
+          : [...ENDPOINT_DEFAULTS.forgejoHosts],
+    };
+  }
+}
+
+async function pushSettingsToBackend() {
+  await invoke("update_api_keys", {
+    githubApiKey: settingsState.keys.github,
+    gitlabApiKey: settingsState.keys.gitlab,
+    forgejoToken: settingsState.keys.forgejo,
+  });
+  await invoke("update_endpoints", {
+    githubEndpoint: settingsState.endpoints.github,
+    gitlabEndpoint: settingsState.endpoints.gitlab,
+    forgejoTrustedHosts: settingsState.endpoints.forgejoHosts,
+  });
+}
+
+function populateSettingsInputs() {
+  settingsInputs.github.value = settingsState.keys.github;
+  settingsInputs.gitlab.value = settingsState.keys.gitlab;
+  settingsInputs.forgejo.value = settingsState.keys.forgejo;
+  settingsInputs.githubEndpoint.value = settingsState.endpoints.github;
+  settingsInputs.gitlabEndpoint.value = settingsState.endpoints.gitlab;
+  settingsInputs.forgejoHosts.value =
+    settingsState.endpoints.forgejoHosts.join("\n");
+}
+
+function activateTab(name) {
+  settingsTabs.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === name);
+  });
+  settingsSections.forEach((section) => {
+    section.hidden = section.dataset.section !== name;
+  });
+}
+
+settingsTabs.addEventListener("click", (e) => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+  activateTab(btn.dataset.tab);
+  if (btn.dataset.tab === "logs") {
+    refreshLogs();
+  }
+});
+
+settingsShowKeys.addEventListener("change", () => {
+  const type = settingsShowKeys.checked ? "text" : "password";
+  settingsInputs.github.type = type;
+  settingsInputs.gitlab.type = type;
+  settingsInputs.forgejo.type = type;
+});
+
+settingsBtn.addEventListener("click", () => {
+  populateSettingsInputs();
+  activateTab("api-keys");
+  settingsShowKeys.checked = false;
+  settingsInputs.github.type = "password";
+  settingsInputs.gitlab.type = "password";
+  settingsInputs.forgejo.type = "password";
+  settingsDialog.showModal();
+});
+
+async function refreshLogs() {
+  settingsLogsStatus.textContent = "Loading…";
+  try {
+    const lines = await invoke("get_logs", { limit: 200 });
+    settingsLogsOutput.textContent = lines.length
+      ? lines.join("\n")
+      : "(no log entries yet)";
+    settingsLogsStatus.textContent = `${lines.length} line(s)`;
+  } catch (e) {
+    settingsLogsOutput.textContent = "";
+    settingsLogsStatus.textContent = `Error: ${e}`;
+  }
+}
+
+settingsLogsRefresh.addEventListener("click", refreshLogs);
+
+function parseHosts(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+settingsSaveBtn.addEventListener("click", async () => {
+  const newKeys = {
+    github: settingsInputs.github.value,
+    gitlab: settingsInputs.gitlab.value,
+    forgejo: settingsInputs.forgejo.value,
+  };
+  const newEndpoints = {
+    github:
+      settingsInputs.githubEndpoint.value.trim() || ENDPOINT_DEFAULTS.github,
+    gitlab:
+      settingsInputs.gitlabEndpoint.value.trim() || ENDPOINT_DEFAULTS.gitlab,
+    forgejoHosts: parseHosts(settingsInputs.forgejoHosts.value),
+  };
+
+  settingsSaveBtn.disabled = true;
+  try {
+    // Persist secrets to Stronghold.
+    if (settingsState.vaultStore && settingsState.stronghold) {
+      for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
+        await settingsState.vaultStore.insert(
+          vaultKey,
+          stringToBytes(newKeys[field]),
+        );
+      }
+      await settingsState.stronghold.save();
+    }
+
+    // Persist endpoints to Store.
+    if (settingsState.endpointStore) {
+      await settingsState.endpointStore.set(
+        ENDPOINT_KEY_NAMES.github,
+        newEndpoints.github,
+      );
+      await settingsState.endpointStore.set(
+        ENDPOINT_KEY_NAMES.gitlab,
+        newEndpoints.gitlab,
+      );
+      await settingsState.endpointStore.set(
+        ENDPOINT_KEY_NAMES.forgejoHosts,
+        newEndpoints.forgejoHosts,
+      );
+      await settingsState.endpointStore.save();
+    }
+
+    settingsState.keys = newKeys;
+    settingsState.endpoints = newEndpoints;
+    await pushSettingsToBackend();
+    ot.toast("Settings saved", "Done", { variant: "success" });
+    settingsDialog.close();
+  } catch (e) {
+    ot.toast(String(e), "Save failed", { variant: "danger" });
+  } finally {
+    settingsSaveBtn.disabled = false;
+  }
+});
+
+async function initSettings() {
+  try {
+    await initVault();
+  } catch (e) {
+    console.warn("Stronghold init failed:", e);
+  }
+  try {
+    await initEndpoints();
+  } catch (e) {
+    console.warn("Store init failed:", e);
+  }
+  try {
+    await pushSettingsToBackend();
+  } catch (e) {
+    console.warn("Pushing settings to backend failed:", e);
+  }
+  try {
+    settingsAppVersion.textContent = `v${await getVersion()}`;
+  } catch {
+    settingsAppVersion.textContent = "(unknown)";
+  }
+}
+
+initSettings();
 loadRepos();

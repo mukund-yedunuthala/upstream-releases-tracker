@@ -86,11 +86,34 @@ pub fn run_config_migrations(config_path: &str) {
                     dirty = true;
                 }
 
-                // TODO(gitlab): Migration: add "gitlab_token" if absent.
-                // if !obj.contains_key("gitlab_token") {
-                //     obj.insert("gitlab_token".to_string(), Value::String(String::new()));
-                //     dirty = true;
-                // }
+                // Migration 3: add "gitlab_api_key" if absent.
+                if !obj.contains_key("gitlab_api_key") {
+                    obj.insert("gitlab_api_key".to_string(), Value::String(String::new()));
+                    dirty = true;
+                }
+
+                // Migration 4: add "gitlab_endpoint" if absent.
+                if !obj.contains_key("gitlab_endpoint") {
+                    obj.insert(
+                        "gitlab_endpoint".to_string(),
+                        Value::String("https://gitlab.com/api/v4/projects/".to_string()),
+                    );
+                    dirty = true;
+                }
+
+                // Migration 5: scrub plaintext API key fields. Secrets now live
+                // in the Stronghold vault — config.json should only carry
+                // endpoint metadata. We blank the fields (rather than removing
+                // them) so the Config struct still deserializes on read.
+                for key in ["github_api_key", "gitlab_api_key", "forgejo_token"] {
+                    if let Some(existing) = obj.get(key) {
+                        let is_nonempty = existing.as_str().map(|s| !s.is_empty()).unwrap_or(false);
+                        if is_nonempty {
+                            obj.insert(key.to_string(), Value::String(String::new()));
+                            dirty = true;
+                        }
+                    }
+                }
             }
 
             if dirty {

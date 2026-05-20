@@ -55,16 +55,65 @@ async fn api_call(
 
         ForgeKind::ForgejoCompatible => forgejo_api_call(config, host_url, owner, repo).await,
 
-        ForgeKind::GitLab => {
-            // TODO(gitlab): Implement GitLab releases API.
-            // Endpoint: GET https://gitlab.com/api/v4/projects/{owner}%2F{repo}/releases
-            // Auth header: "PRIVATE-TOKEN: <config.gitlab_token>"
-            // Note: owner/repo must be URL-encoded as a single slug: "owner%2Frepo"
-            // Reference: https://docs.gitlab.com/ee/api/releases/
-            Err("GitLab support is not yet implemented".to_string())
-        }
+        ForgeKind::GitLab => gitlab_api_call(config, owner, repo).await,
 
     }
+}
+
+async fn gitlab_api_call(
+    config: &Config,
+    owner: &str,
+    repo: &str,
+) -> Result<serde_json::Value, String> {
+    // GitLab requires the project path to be URL-encoded as a single slug.
+    let project_slug = format!("{}%2F{}", owner, repo);
+    let api_url = format!("{}{}/releases", config.gitlab_endpoint, project_slug);
+
+    let parsed = url::Url::parse(&api_url)
+        .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "GitLab endpoint must use HTTPS (got '{}'). Check gitlab_endpoint in settings.",
+            parsed.scheme()
+        ));
+    }
+    if parsed.host_str().is_none() {
+        return Err("GitLab endpoint URL has no host. Check gitlab_endpoint in settings.".to_string());
+    }
+
+    let mut request = http_client().get(&api_url);
+
+    if !config.gitlab_api_key.is_empty() {
+        request = request.header("PRIVATE-TOKEN", &config.gitlab_api_key);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!(
+            "GitLab API returned {} ({}) for {}/{}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown"),
+            owner,
+            repo
+        ));
+    }
+
+    // GitLab returns an array of releases ordered newest-first. Return the
+    // first element so callers can extract `tag_name` uniformly across forges.
+    let releases: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitLab API response: {}", e))?;
+
+    releases
+        .get(0)
+        .cloned()
+        .ok_or_else(|| format!("No releases found for {}/{}", owner, repo))
 }
 
 async fn github_api_call(

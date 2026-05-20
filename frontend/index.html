@@ -32,6 +32,14 @@
                     >
                         Refresh all
                     </button>
+                    <button
+                        class="outline"
+                        id="settings-btn"
+                        title="Settings"
+                        aria-label="Open settings"
+                    >
+                        Settings
+                    </button>
                 </div>
             </header>
             <section id="repo-grid"></section>
@@ -74,6 +82,147 @@
                 </footer>
             </form>
         </dialog>
+
+        <!-- Settings dialog -->
+        <dialog id="settings-dialog" closedby="any">
+            <form method="dialog">
+                <header>
+                    <h3>Settings</h3>
+                    <nav id="settings-tabs" class="tab-bar">
+                        <button
+                            type="button"
+                            class="tab-btn active"
+                            data-tab="api-keys"
+                        >
+                            API Keys
+                        </button>
+                        <button
+                            type="button"
+                            class="tab-btn"
+                            data-tab="endpoints"
+                        >
+                            Endpoints
+                        </button>
+                        <button type="button" class="tab-btn" data-tab="logs">
+                            Logs
+                        </button>
+                        <button type="button" class="tab-btn" data-tab="about">
+                            About
+                        </button>
+                    </nav>
+                </header>
+
+                <section class="settings-section" data-section="api-keys">
+                    <p class="settings-help">
+                        Tokens are stored locally in an encrypted vault. They
+                        never leave your machine except as auth headers to the
+                        forge you configured.
+                    </p>
+                    <label data-field>
+                        GitHub token
+                        <input
+                            type="password"
+                            id="settings-github-key"
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label data-field>
+                        GitLab token
+                        <input
+                            type="password"
+                            id="settings-gitlab-key"
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label data-field>
+                        Forgejo / Gitea token
+                        <input
+                            type="password"
+                            id="settings-forgejo-key"
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label data-field>
+                        <input
+                            type="checkbox"
+                            id="settings-show-keys"
+                        />
+                        Show tokens
+                    </label>
+                </section>
+
+                <section
+                    class="settings-section"
+                    data-section="endpoints"
+                    hidden
+                >
+                    <label data-field>
+                        GitHub endpoint
+                        <input
+                            type="url"
+                            id="settings-github-endpoint"
+                            placeholder="https://api.github.com/repos/"
+                            maxlength="2048"
+                        />
+                    </label>
+                    <label data-field>
+                        GitLab endpoint
+                        <input
+                            type="url"
+                            id="settings-gitlab-endpoint"
+                            placeholder="https://gitlab.com/api/v4/projects/"
+                            maxlength="2048"
+                        />
+                    </label>
+                    <label data-field>
+                        Forgejo trusted hosts (one per line)
+                        <textarea
+                            id="settings-forgejo-hosts"
+                            rows="4"
+                            placeholder="codeberg.org"
+                        ></textarea>
+                    </label>
+                </section>
+
+                <section class="settings-section" data-section="logs" hidden>
+                    <div class="logs-toolbar">
+                        <button
+                            type="button"
+                            id="settings-logs-refresh"
+                            class="outline"
+                        >
+                            Refresh
+                        </button>
+                        <span id="settings-logs-status" class="muted"></span>
+                    </div>
+                    <pre id="settings-logs-output"></pre>
+                </section>
+
+                <section class="settings-section" data-section="about" hidden>
+                    <h4>Upstream Releases Tracker</h4>
+                    <p>Version <span id="settings-app-version">…</span></p>
+                    <p class="muted">
+                        Tracks release tags across GitHub, GitLab and
+                        Forgejo / Gitea, and compares them to versions you have
+                        installed.
+                    </p>
+                </section>
+
+                <footer>
+                    <button
+                        type="button"
+                        id="settings-save-btn"
+                    >
+                        Save
+                    </button>
+                    <button value="close" class="outline">Close</button>
+                </footer>
+            </form>
+        </dialog>
+
         <script type="module" src="./app.js" defer></script>
     </body>
 </html>

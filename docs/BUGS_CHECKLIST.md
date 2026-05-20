@@ -134,3 +134,50 @@ A coding agent picking this up cold should:
 - [ ] `cd src-tauri && cargo tauri dev` — app launches, full flow exercised: add, refresh, refresh-all, edit, mark-updated, delete
 - [ ] `cd src-tauri && cargo tauri build` succeeds
 - [x] `git log --oneline` shows 9 commits, one per batch (3d4fa3b..325e82e)
+
+---
+
+## Batch 10 — Settings / Stronghold / GitLab feature audit
+
+Post-implementation audit of the work tracked in `docs/CHECKLIST-features.md` (GitLab + Stronghold + Store + Settings UI). Numbered items continue the BUGS.md scheme (#34+) and are independent of `BUGS.md` since they describe regressions and gaps introduced by the new feature set.
+
+### Critical — vault is not actually protecting tokens
+
+- [ ] **#34** `src-tauri/src/lib.rs:296-303, 394-399` — Stronghold password derivation isn't a real KDF. `get_vault_key` returns the bytes of `"page.mukundyedunuthala.upstream-releases-tracker:v1:{machine_id}"`, and the plugin's password-hash callback is a single `SHA-256` pass. `/etc/machine-id` is world-readable on Linux, the salt is a public constant in source, and there is no per-user secret. Any local user can recompute the password and decrypt `vault.hold` offline. Fix: take a user passphrase, or at minimum use `argon2` with a per-install random salt stored alongside the vault.
+- [ ] **#35** `src-tauri/src/lib.rs:305-323` — On any platform without `/etc/machine-id` *or* `/var/lib/dbus/machine-id` (macOS, Windows, sandboxed Linux), `read_machine_id` returns the literal `"upstream-releases-tracker-fallback"`. All such installs share the same vault password — a vault file lifted from any machine decrypts on every other. The release workflow ships Windows NSIS bundles, so this affects the primary distribution target.
+- [ ] **#36** `frontend/app.js:12, 403` — `Stronghold.load("vault.hold", keyBytes)` passes a bare filename. The plugin resolves relative paths against the renderer process CWD, which on a Windows NSIS install lives under `Program Files\…` (typically read-only for non-admin users). Vault writes silently fail. Resolve through `@tauri-apps/api/path`'s `appLocalDataDir()` and join.
+
+### High — silent data loss and persistence gaps
+
+- [ ] **#37** `frontend/app.js:567-595` — The save handler guards persistence with `if (settingsState.vaultStore && settingsState.stronghold)` (and similarly for the endpoint store) but always toasts `"Settings saved"` afterwards. If init failed (a likely outcome of #36 on Windows), the user sees a green success toast while the tokens never touched disk.
+- [ ] **#38** `frontend/app.js:609-630, 472-483` — `initSettings()` unconditionally calls `pushSettingsToBackend()` at startup, and `update_endpoints` writes `config.json`. Net effect: every launch overwrites `config.json` with whatever the frontend Store has, so a hand-edited `config.json` is silently clobbered on the next start. Make `update_endpoints` write-on-change only, or stop persisting endpoints from the frontend now that the Store is authoritative.
+- [ ] **#39** `src-tauri/src/lib.rs:261-278` — `update_endpoints` accepts arbitrary strings for `github_endpoint` and `gitlab_endpoint`. No HTTPS check, no `url::Url::parse`, no length cap. A misconfigured endpoint persists to disk and only surfaces at the next refresh.
+- [ ] **#40** `src-tauri/src/lib.rs:280-292` — `update_api_keys` accepts unbounded `String` for all three tokens. Add a sanity cap (e.g. ≤ 4096 chars) and trim/reject control characters.
+- [ ] **#41** `src-tauri/src/lib.rs:360-364` — `get_logs` loads the entire log file via `std::fs::read_to_string` before tailing. With `tauri-plugin-log` defaults and no rotation pinned (see #46) this is an unbounded read. Use `BufReader` from the end, or check `metadata().len()` and bail / seek for files past a threshold.
+
+### Medium — correctness and UX regressions
+
+- [ ] **#42** `frontend/app.js:339-371` — Edit dialog's `close` handler `await`s `invoke("edit_repo", …)` then resets `editingUrl = null` in `finally`. If the user reopens the edit dialog mid-await, the finally clobbers the newly opened state and the subsequent save hits the `if (!editingUrl) return` early-return — silent no-op. Capture `editingUrl` into a local at the top of the handler and drop the module-level reset.
+- [ ] **#43** `src-tauri/src/git_api_handler.rs:20-44, 63-117` — `parse_url` still only captures two path segments, so GitLab subgroup URLs like `https://gitlab.com/group/subgroup/project` parse as `owner=group, repo=subgroup` and lose the leaf. GitLab feature ships incomplete; the BUGS.md #12 fix only solved scheme validation. Collect all segments and percent-encode them as the project slug.
+- [ ] **#44** `frontend/app.js:546-551, 460-469` — Saving an empty Forgejo hosts textarea persists `[]`, but `initEndpoints` reads it back through `Array.isArray(stored.forgejoHosts) && stored.forgejoHosts.length > 0 ? … : [...ENDPOINT_DEFAULTS.forgejoHosts]` and silently restores `codeberg.org`. No way to express an intentional empty allowlist.
+- [ ] **#45** `frontend/app.js:46-53` — `bytesToString` swallows `TextDecoder` errors and returns `""`. A corrupted vault entry is indistinguishable from "unset"; the next save can then overwrite the still-present-but-unreadable secret. Surface the error to the UI (toast + leave the field disabled).
+- [ ] **#46** `src-tauri/src/lib.rs:392` — `tauri_plugin_log::Builder::new().build()` uses defaults: no `level_for`, no max file size, no rotation strategy. Pin the level (e.g. `Info` in release builds) and configure rotation so #41 doesn't grow into a real issue.
+- [ ] **#47** `src-tauri/tauri.conf.json:23` — CSP is now restrictive, but still omits `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`. `default-src 'self'` already covers `object-src`. Add the three above for defense-in-depth.
+- [ ] **#48** `frontend/index.html:49, 87` — Both `<dialog>` elements still carry the experimental `closedby="any"` attribute even though BUGS.md #24 added the JS cancel fallback. Older WebView2 ignores it harmlessly, but it's dead syntax — drop it now that the JS path is the source of truth.
+
+### Defense-in-depth
+
+- [ ] **#49** `src-tauri/src/lib.rs:298-303, 412` — `get_vault_key` is registered in `generate_handler!` and reachable from any IPC caller (or future XSS). Combined with #34/#35, exposing it to JS hands an attacker the offline-decryption key. Move the derivation into the Stronghold plugin's password closure (already runs in Rust) and stop returning bytes over IPC; expose `vault_get(key)` / `vault_set(key, val)` commands instead.
+- [ ] **#50** `src-tauri/src/git_api_handler.rs:69-70` — GitLab project slug uses `format!("{}%2F{}", owner, repo)` with no encoding of `owner`/`repo`. The frontend regex blocks `%` and `/` today, but anything that ever loosens validation (e.g. supporting `.` group paths or Unicode) re-opens path injection into the GitLab API URL. Use `percent_encoding::utf8_percent_encode` over the `PATH_SEGMENT` set.
+
+### Smoke tests
+
+- [ ] Windows prod build: add a token → close app → reopen → token still present (validates #36)
+- [ ] Force Stronghold init failure (delete capability or break path) → save → reopen → confirm toast lies vs. reality (validates #37)
+- [ ] Hand-edit `config.json` → restart → verify your edits survive (validates #38)
+- [ ] Drop a >100MB log into `app_log_dir` → call `get_logs` → confirm no OOM (validates #41)
+- [ ] Open edit dialog A → click Save → during await reopen edit on repo B → press Save → verify no silent no-op (validates #42)
+- [ ] Add `https://gitlab.com/group/subgroup/project` → confirm refresh hits the correct GitLab API URL (validates #43)
+- [ ] Clear the Forgejo hosts textarea, save, reopen settings → expect empty list, not `codeberg.org` (validates #44)
+
+- [ ] **Commit** — `audit: settings/stronghold/gitlab follow-up findings (BUGS #34–#50)`
