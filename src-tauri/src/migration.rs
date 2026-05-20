@@ -89,7 +89,17 @@ pub fn run_config_migrations(config_path: &str) {
                     dirty = true;
                 }
 
-                // TODO(gitlab): Migration 2: add "gitlab_token" if absent.
+                // Migration 2: add "forgejo_trusted_hosts" if absent.
+                // Default: ["codeberg.org"] so existing Codeberg users keep working.
+                if !obj.contains_key("forgejo_trusted_hosts") {
+                    obj.insert(
+                        "forgejo_trusted_hosts".to_string(),
+                        serde_json::json!(["codeberg.org"]),
+                    );
+                    dirty = true;
+                }
+
+                // TODO(gitlab): Migration: add "gitlab_token" if absent.
                 // if !obj.contains_key("gitlab_token") {
                 //     obj.insert("gitlab_token".to_string(), Value::String(String::new()));
                 //     dirty = true;

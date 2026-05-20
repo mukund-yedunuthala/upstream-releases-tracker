@@ -79,16 +79,16 @@ A coding agent picking this up cold should:
 - [ ] **#5** Verify dev (Vite HMR) and prod bundle both load
 - [x] **#7** Remove `get_config` command from `src-tauri/src/lib.rs` and `generate_handler![]`
 - [ ] Smoke test: inject `<img src=x onerror=alert(1)>` as tag → renders literally; `invoke('get_config')` errors
-- [ ] **Commit** — `security: XSS hardening & redact config (BUGS #1 #5 #7)`
+- [x] **Commit** — `security: XSS hardening & redact config (BUGS #1 #5 #7)`
 
 ---
 
 ## Batch 6 — Forgejo host trust boundary
 
-- [ ] **#4** Add `forgejo_hosts: Vec<String>` to `Config` in `tracker_libs/src/lib.rs`; default `vec!["codeberg.org".into()]`
-- [ ] **#4** Backfill via `src-tauri/src/migration.rs`
-- [ ] **#4** Gate `forgejo_api_call` on allowlist membership; clear error if not listed
-- [ ] **#4** Frontend toast wording for host-not-trusted errors
+- [x] **#4** Add `forgejo_trusted_hosts: Vec<String>` to `Config` in `tracker_libs/src/lib.rs`; default `vec!["codeberg.org".into()]`
+- [x] **#4** Backfill via `src-tauri/src/migration.rs` (config migration 2)
+- [x] **#4** Gate `forgejo_api_call` on allowlist; error message tells user to add host to config.json
+- [x] **#4** Error propagates to frontend as a toast via existing error handling (no separate wiring needed)
 - [ ] Smoke test: `evil.example.com` Forgejo URL rejected; `codeberg.org` works
 - [ ] **Commit** — `security: Forgejo host allowlist (BUGS #4)`
 

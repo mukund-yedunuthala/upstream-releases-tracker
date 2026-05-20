@@ -113,6 +113,20 @@ async fn forgejo_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
+    // Reject hosts not on the user-managed allowlist to prevent token exfiltration.
+    // To add a new Forgejo host, add its hostname to forgejo_trusted_hosts in config.json.
+    if !config.forgejo_token.is_empty()
+        && !config
+            .forgejo_trusted_hosts
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(host_url))
+    {
+        return Err(format!(
+            "Host '{}' is not in forgejo_trusted_hosts. Add it to config.json to allow sending your token there.",
+            host_url
+        ));
+    }
+
     // Forgejo and Gitea share the same API surface.
     // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
     let api_url = format!(
