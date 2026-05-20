@@ -38,6 +38,9 @@ impl Config {
     }
 }
 
+// The BTreeMap key (the full URL) duplicates host_url + owner + repo_name. This
+// is intentional denormalization — O(log n) lookup by URL outweighs the minor
+// drift risk for this dataset size.
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct RepoData {
     pub owner: String,

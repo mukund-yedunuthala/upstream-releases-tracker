@@ -113,17 +113,16 @@ A coding agent picking this up cold should:
 - [x] **#21** Single delegated `click` handler on `#repo-grid` reading `data-action` + `closest('[data-url]')`; per-card listeners removed; host_kind stored in `card.dataset.hostKind`
 - [x] **#21** `openEditDialog` signature simplified (removed unused `name` param)
 - [ ] Smoke test: corrupt config → see error in log file; with 20 repos only one listener on the grid
-- [ ] **Commit** — `chore: logging plugin & card render delegation (BUGS #19 #21)`
+- [x] **Commit** — `chore: logging plugin & card render delegation (BUGS #19 #21)`
 
 ---
 
 ## Batch 9 — Cleanup (README last)
 
-- [ ] **#27** `cd frontend && npm run build`; inspect `dist/assets/*.js` for `@tauri-apps/api` non-core exports
-- [ ] **#32** `tracker_libs/src/lib.rs:38-46` — comment on intentional `BTreeMap` key / `RepoData` denormalization
-- [ ] **#33** Confirm `.gitignore` covers `frontend/dist/`, `dist/`; add `/public/repos.json` (dev-local data)
-- [ ] **#33** Untrack `public/repos.json` if currently tracked
-- [ ] **#31** Rewrite `README.md` — app description, dev/build commands (mirror CLAUDE.md), supported forges, config/data locations, token-storage security note
+- [x] **#27** Built frontend — bundle is 12.79 kB; grep confirms zero `@tauri-apps/api` non-core exports (tree-shaking already working)
+- [x] **#32** `tracker_libs/src/lib.rs` — added comment on intentional URL/RepoData denormalization
+- [x] **#33** Added `frontend/dist/` and `public/repos.json` to `.gitignore`; untracked `public/repos.json` with `git rm --cached`
+- [x] **#31** README rewritten: app description, dev/build commands, supported forges, data locations, token security note
 - [ ] **Commit** — `chore: gitignore, comments & README overhaul (BUGS #27 #31 #32 #33)`
 
 ---
