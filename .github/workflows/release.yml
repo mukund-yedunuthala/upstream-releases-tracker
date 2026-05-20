@@ -6,6 +6,10 @@ on:
       - release
   workflow_dispatch:
 
+concurrency:
+  group: release-build
+  cancel-in-progress: true
+
 jobs:
   publish-tauri:
     permissions:
@@ -21,17 +25,12 @@ jobs:
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
 
-      - name: Install and build frontend
-        working-directory: frontend   # ← explicit working dir
-        run: |
-          npm install -D vite
-          npm run build
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: src-tauri 
+          projectPath: src-tauri
+          args: --bundles nsis
           tagName: v__VERSION__
           releaseName: 'Upstream Releases Tracker v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
