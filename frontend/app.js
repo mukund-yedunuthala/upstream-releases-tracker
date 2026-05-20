@@ -286,7 +286,7 @@ editDialog.addEventListener("close", async () => {
   }
 });
 
-// Mirrors helper.rs is_valid_repo_url — any HTTPS URL with owner/repo segments.
+// Mirrors parse_url in git_api_handler.rs — must stay in sync with Rust validation.
 function isValidRepoUrl(url) {
   return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
     url,

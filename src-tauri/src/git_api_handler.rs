@@ -19,16 +19,28 @@ fn http_client() -> &'static Client {
 
 /// Parses owner and repo name from any forge URL.
 fn parse_url(url: &str) -> Result<(String, String), String> {
-    let url = url.trim_end_matches('/');
-    let parts: Vec<&str> = url.splitn(6, '/').collect();
-    if parts.len() < 5 {
-        return Err(format!("URL does not look like a valid repo URL: {}", url));
+    if url.len() > 2048 {
+        return Err("URL exceeds maximum allowed length of 2048 characters".to_string());
     }
-    let owner = parts[3].to_string();
-    let repo = parts[4].to_string();
-    if owner.is_empty() || repo.is_empty() {
-        return Err(format!("Could not extract owner/repo from URL: {}", url));
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    if parsed.scheme() != "https" {
+        return Err(format!(
+            "Only HTTPS URLs are supported (got '{}')",
+            parsed.scheme()
+        ));
     }
+    let mut segments = parsed
+        .path_segments()
+        .ok_or_else(|| "URL has no path segments".to_string())?
+        .filter(|s| !s.is_empty());
+    let owner = segments
+        .next()
+        .ok_or_else(|| "URL is missing owner segment".to_string())?
+        .to_string();
+    let repo = segments
+        .next()
+        .ok_or_else(|| "URL is missing repository segment".to_string())?
+        .to_string();
     Ok((owner, repo))
 }
 
@@ -54,10 +66,6 @@ async fn api_call(
             Err("GitLab support is not yet implemented".to_string())
         }
 
-        ForgeKind::Unknown => Err(format!(
-            "Unknown forge host '{}' — cannot fetch releases",
-            host_url
-        )),
     }
 }
 

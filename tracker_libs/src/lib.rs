@@ -5,7 +5,6 @@ pub enum ForgeKind {
     GitHub,
     GitLab,
     ForgejoCompatible, // Covers both Gitea and Forgejo — identical API surface
-    Unknown,
 }
 
 impl Default for ForgeKind {

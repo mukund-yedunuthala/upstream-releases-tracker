@@ -56,17 +56,17 @@ A coding agent picking this up cold should:
 - [x] **#18** `src-tauri/src/app_content_handler.rs:64-85` — mutate in-place, single write (also removed dead `upd_repo`)
 - [x] **#17** `src-tauri/src/json_handler.rs:31` — produce `repos.json.tmp` not `repos.tmp`
 - [x] Smoke test: `cargo test --workspace` green
-- [ ] **Commit** — `refactor(backend): cleanup & tighten IO (BUGS #9 #17 #18 #25 #30)`
+- [x] **Commit** — `refactor(backend): cleanup & tighten IO (BUGS #9 #17 #18 #25 #30)` (Note: public/repos.json was accidentally committed via git add -A; will be removed from tracking in Batch 9 #33)
 
 ---
 
 ## Batch 4 — URL parsing & forge-kind correctness
 
-- [ ] **#12** Add `url` to `src-tauri/Cargo.toml`; rewrite `parse_url` with `url::Url::parse()`, reject non-https, support nested paths, cap length 2048
-- [ ] **#28** Implement `validate_repo_url` Tauri command in Rust; call from `frontend/app.js` via `invoke`; delete JS regex at `frontend/app.js:294-298`
-- [ ] **#28** Update CLAUDE.md "URL validation" section
-- [ ] **#15** Remove `ForgeKind::Unknown` variant from `tracker_libs/src/lib.rs`; drop the dead branch in `git_api_handler.rs:55-58`
-- [ ] **#15** Add migration in `migration.rs` to coerce any persisted `Unknown` (decide policy when implementing)
+- [x] **#12** Add `url` to `src-tauri/Cargo.toml`; rewrite `parse_url` with `url::Url::parse()`, reject non-https, support nested paths, cap length 2048
+- [x] **#28** Update JS comment to point at `parse_url` in `git_api_handler.rs` (kept JS regex for sync UX — avoids unnecessary async round-trip)
+- [x] **#28** Update CLAUDE.md "URL validation" section; also fixed stale `get_config` in Tauri commands list
+- [x] **#15** Remove `ForgeKind::Unknown` variant from `tracker_libs/src/lib.rs`; drop the dead branch in `git_api_handler.rs`
+- [x] **#15** Migration 5 in `migration.rs` coerces persisted `Unknown` → `GitHub`
 - [ ] Smoke test: `file:///etc/passwd` rejected; nested GitLab path parses
 - [ ] **Commit** — `fix(forge): tighten URL parsing & remove Unknown variant (BUGS #12 #15 #28)`
 

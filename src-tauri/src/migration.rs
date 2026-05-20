@@ -45,6 +45,16 @@ pub fn run_migrations(datafile_path: &str) {
                             );
                             dirty = true;
                         }
+
+                        // Migration 5: coerce the removed ForgeKind::Unknown
+                        // variant to "GitHub" so old data files still deserialize.
+                        if obj.get("host_kind").and_then(|v| v.as_str()) == Some("Unknown") {
+                            obj.insert(
+                                "host_kind".to_string(),
+                                Value::String("GitHub".to_string()),
+                            );
+                            dirty = true;
+                        }
                     }
                 }
             }

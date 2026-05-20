@@ -66,7 +66,7 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 
 ### Tauri commands
 
-`get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `mark_as_updated`, `get_config` — all defined in `src-tauri/src/lib.rs`.
+`get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `mark_as_updated` — all defined in `src-tauri/src/lib.rs`.
 
 ### Adding a new forge
 
@@ -80,4 +80,4 @@ GitLab is stubbed but unimplemented — see the `TODO(gitlab)` comments in `git_
 
 ### URL validation
 
-`isValidRepoUrl` in `frontend/app.js` and `is_valid_repo_url` in `src-tauri/src/helper.rs` must stay in sync — both enforce `https://host/owner/repo`.
+`isValidRepoUrl` in `frontend/app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with `host/owner/repo` path structure.
