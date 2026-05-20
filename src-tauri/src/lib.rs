@@ -11,7 +11,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
-use tracker_libs::{Config, ForgeKind, RepoData};
+use tracker_libs::{ForgeKind, RepoData};
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 
 fn datafile_path_string() -> Result<String, String> {
@@ -28,11 +28,6 @@ fn datafile_path_string() -> Result<String, String> {
         .to_str()
         .ok_or("Failed to convert datafile path to string")
         .map(|s| s.to_string())?)
-}
-
-#[tauri::command]
-async fn get_config() -> Result<Config, String> {
-    ConfigHandler::read_config().map_err(|e| format!("Failed to read config: {}", e))
 }
 
 #[tauri::command]
@@ -114,7 +109,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            get_config,
             get_repos,
             add_repo,
             delete_repo,

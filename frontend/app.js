@@ -36,36 +36,41 @@ function buildCard(url, data) {
     !!data.system_version && data.system_version === data.latest_release;
   const badgeClass = isUpToDate ? "success" : "warning";
   const badgeText = isUpToDate ? "Up to date" : "Update available";
-  const shortUrl = url.replace(/^https?:\/\//, "");
-  const title = data.owner + "/" + data.repo_name;
-  const name = title || shortUrl;
+  // Only allow https: URLs in the href to prevent javascript: injection
+  const safeUrl = url.startsWith("https://") ? url : null;
+  const shortUrl = safeUrl ? safeUrl.replace(/^https:\/\//, "") : "";
+  const name =
+    data.owner && data.repo_name
+      ? `${data.owner}/${data.repo_name}`
+      : shortUrl;
   const latest = data.latest_release || "—";
   const system = data.system_version || "—";
+  const hostSlug =
+    data.host_kind?.toLowerCase().replace("compatible", "") || "unknown";
 
   const card = document.createElement("article");
   card.className = "card repo-card";
   card.dataset.url = url;
 
+  // Static structural markup — no user/API data interpolated here
   card.innerHTML = `
     <header>
       <div class="repo-card-title">
-        <strong>${name}</strong>
-        <span class="badge ${badgeClass}">${badgeText}</span>
+        <strong class="js-card-name"></strong>
+        <span class="js-card-badge"></span>
       </div>
       <div class="repo-card-subtitle">
-        <span class="host-badge host-badge--${data.host_kind?.toLowerCase().replace("compatible", "") || "unknown"}">
-          ${forgeLabel(data.host_kind)}
-        </span>
-        <a href="${url}" class="repo-url">${shortUrl}</a>
+        <span class="js-card-host-badge host-badge"></span>
+        <a class="repo-url js-card-url"></a>
       </div>
     </header>
     <div class="repo-card-meta">
       <span>Latest release</span>
-      <code>${latest}</code>
+      <code class="js-card-latest"></code>
     </div>
     <div class="repo-card-meta">
       <span>Installed version</span>
-      <code>${system}</code>
+      <code class="js-card-system"></code>
     </div>
     <footer class="repo-card-actions">
       <button class="small outline" data-action="refresh">Refresh</button>
@@ -85,6 +90,20 @@ function buildCard(url, data) {
       </article>
     </footer>
   `;
+
+  // Inject all dynamic data via DOM — never via innerHTML interpolation
+  card.querySelector(".js-card-name").textContent = name;
+  const badge = card.querySelector(".js-card-badge");
+  badge.className = `badge ${badgeClass}`;
+  badge.textContent = badgeText;
+  const hostBadge = card.querySelector(".js-card-host-badge");
+  hostBadge.classList.add(`host-badge--${hostSlug}`);
+  hostBadge.textContent = forgeLabel(data.host_kind);
+  const link = card.querySelector(".js-card-url");
+  if (safeUrl) link.href = safeUrl;
+  link.textContent = shortUrl;
+  card.querySelector(".js-card-latest").textContent = latest;
+  card.querySelector(".js-card-system").textContent = system;
 
   // Refresh
   card

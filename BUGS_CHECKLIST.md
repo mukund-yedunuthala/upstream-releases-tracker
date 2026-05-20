@@ -68,16 +68,16 @@ A coding agent picking this up cold should:
 - [x] **#15** Remove `ForgeKind::Unknown` variant from `tracker_libs/src/lib.rs`; drop the dead branch in `git_api_handler.rs`
 - [x] **#15** Migration 5 in `migration.rs` coerces persisted `Unknown` → `GitHub`
 - [ ] Smoke test: `file:///etc/passwd` rejected; nested GitLab path parses
-- [ ] **Commit** — `fix(forge): tighten URL parsing & remove Unknown variant (BUGS #12 #15 #28)`
+- [x] **Commit** — `fix(forge): tighten URL parsing & remove Unknown variant (BUGS #12 #15 #28)`
 
 ---
 
 ## Batch 5 — XSS hardening
 
-- [ ] **#1** `frontend/app.js:50-88` — rebuild `buildCard` via `createElement` + `textContent`; validate href scheme
-- [ ] **#5** `src-tauri/tauri.conf.json:23` — strict CSP `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: https://ipc.localhost`
+- [x] **#1** `frontend/app.js:50-88` — rebuilt `buildCard` with static innerHTML skeleton + DOM textContent for all API/user data; href only set for https: URLs
+- [x] **#5** `src-tauri/tauri.conf.json:23` — strict CSP `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: https://ipc.localhost`
 - [ ] **#5** Verify dev (Vite HMR) and prod bundle both load
-- [ ] **#7** Remove `get_config` command from `src-tauri/src/lib.rs` and `generate_handler![]`
+- [x] **#7** Remove `get_config` command from `src-tauri/src/lib.rs` and `generate_handler![]`
 - [ ] Smoke test: inject `<img src=x onerror=alert(1)>` as tag → renders literally; `invoke('get_config')` errors
 - [ ] **Commit** — `security: XSS hardening & redact config (BUGS #1 #5 #7)`
 
