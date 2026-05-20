@@ -1,4 +1,4 @@
-use crate::json_handler::JSONHandler;
+use crate::json_handler;
 use serde_json::Value;
 use std::path::Path;
 
@@ -7,7 +7,7 @@ pub fn run_migrations(datafile_path: &str) {
         return;
     }
 
-    match JSONHandler::read_from_json::<Value>(datafile_path) {
+    match json_handler::read_from_json::<Value>(datafile_path) {
         Ok(mut raw) => {
             let mut dirty = false;
 
@@ -50,7 +50,7 @@ pub fn run_migrations(datafile_path: &str) {
             }
 
             if dirty {
-                match JSONHandler::write_json_file::<Value>(datafile_path, &raw) {
+                match json_handler::write_json_file::<Value>(datafile_path, &raw) {
                     Ok(_) => log::info!("repos.json migration completed successfully."),
                     Err(e) => log::error!("Failed to write migrated repos.json: {}", e),
                 }
@@ -65,7 +65,7 @@ pub fn run_config_migrations(config_path: &str) {
         return;
     }
 
-    match JSONHandler::read_from_json::<Value>(config_path) {
+    match json_handler::read_from_json::<Value>(config_path) {
         Ok(mut raw) => {
             let mut dirty = false;
 
@@ -94,7 +94,7 @@ pub fn run_config_migrations(config_path: &str) {
             }
 
             if dirty {
-                match JSONHandler::write_json_file::<Value>(config_path, &raw) {
+                match json_handler::write_json_file::<Value>(config_path, &raw) {
                     Ok(_) => log::info!("config.json migration completed successfully."),
                     Err(e) => log::error!("Failed to write migrated config.json: {}", e),
                 }
