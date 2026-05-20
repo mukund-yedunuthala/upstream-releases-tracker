@@ -1,11 +1,14 @@
 mod app_content_handler;
 mod config_handler;
 mod git_api_handler;
-mod helper;
 mod json_handler;
 mod migration;
 
-use crate::{app_content_handler::AppContentHandler, git_api_handler::GitHandler};
+use crate::{
+    app_content_handler::AppContentHandler,
+    config_handler::ConfigHandler,
+    git_api_handler::GitHandler,
+};
 use std::collections::BTreeMap;
 
 use tracker_libs::{Config, ForgeKind, RepoData};
@@ -29,7 +32,7 @@ fn datafile_path_string() -> Result<String, String> {
 
 #[tauri::command]
 async fn get_config() -> Result<Config, String> {
-    helper::read_config()
+    ConfigHandler::read_config().map_err(|e| format!("Failed to read config: {}", e))
 }
 
 #[tauri::command]
@@ -57,7 +60,7 @@ async fn refresh_repo(url: String) -> Result<String, String> {
         .get(&url)
         .ok_or_else(|| format!("Repo not found: {}", url))?;
 
-    let config = helper::read_config()?; // now propagates
+    let config = ConfigHandler::read_config().map_err(|e| format!("Failed to read config: {}", e))?;
     let git_api_handler = GitHandler {};
 
     let result = git_api_handler
@@ -77,7 +80,7 @@ async fn refresh_repo(url: String) -> Result<String, String> {
 async fn add_repo(url: String, host: String, forge: ForgeKind) -> Result<String, String> {
     let datafile_path_string = datafile_path_string()?;
 
-    let config = helper::read_config()?;
+    let config = ConfigHandler::read_config().map_err(|e| format!("Failed to read config: {}", e))?;
     let git_api_handler = GitHandler {};
 
     let new_repo_data = git_api_handler

@@ -153,14 +153,17 @@ impl GitHandler {
     ) -> Result<RepoData, String> {
         let (owner, repo_name) = parse_url(&url)?;
         let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
+        let latest_release = json["tag_name"]
+            .as_str()
+            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
+            .to_string();
 
         Ok(RepoData {
             owner,
             repo_name,
             host_url,
             host_kind,
-            latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
-            // Empty on first add — user hasn't installed this version yet.
+            latest_release,
             system_version: String::new(),
         })
     }
@@ -178,13 +181,17 @@ impl GitHandler {
             &old_repo.host_kind,
         )
         .await?;
+        let latest_release = json["tag_name"]
+            .as_str()
+            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
+            .to_string();
 
         Ok(RepoData {
             owner: old_repo.owner.clone(),
             repo_name: old_repo.repo_name.clone(),
             host_url: old_repo.host_url.clone(),
             host_kind: old_repo.host_kind.clone(),
-            latest_release: json["tag_name"].as_str().unwrap_or("").to_string(),
+            latest_release,
             system_version: old_repo.system_version.clone(),
         })
     }

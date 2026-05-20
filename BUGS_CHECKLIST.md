@@ -43,19 +43,19 @@ A coding agent picking this up cold should:
 - [x] **#23** `frontend/index.html:26-30,66-70` — `maxlength="2048"` on both URL inputs
 - [x] **#24** `frontend/index.html:50,74-81` — drop experimental `closedby`/`commandfor`/`command`, wire JS Cancel handler
 - [ ] Smoke test: `window.__TAURI__` undefined in DevTools; hung host times out ~15s
-- [ ] **Commit** — `chore: config & dependency hygiene (BUGS #6 #11 #16 #22 #23 #24 #26 #29)`
+- [x] **Commit** — `chore: config & dependency hygiene (BUGS #6 #11 #16 #22 #23 #24 #26 #29)`
 
 ---
 
 ## Batch 3 — Backend cleanup & silent-failure fixes
 
-- [ ] **#9** Delete `src/main.rs`, strip root `[package]`/`[dependencies]` in `Cargo.toml`, drop WASM deps
-- [ ] **#9** Confirm `cargo build --workspace` green
-- [ ] **#30** Inline `helper.rs::read_config` into `src-tauri/src/lib.rs`, delete file, drop `mod helper;`
-- [ ] **#25** `src-tauri/src/git_api_handler.rs:160,185` — `unwrap_or("")` → `Err("API response missing tag_name")`
-- [ ] **#18** `src-tauri/src/app_content_handler.rs:64-85` — mutate in-place, single write
-- [ ] **#17** `src-tauri/src/json_handler.rs:31` — produce `repos.json.tmp` not `repos.tmp`
-- [ ] Smoke test: `cargo test --workspace` green
+- [x] **#9** Delete `src/main.rs`, strip root `[package]`/`[dependencies]` in `Cargo.toml`, drop WASM deps
+- [x] **#9** Confirm `cargo build --workspace` green
+- [x] **#30** Inline `helper.rs::read_config` into `src-tauri/src/lib.rs`, delete file, drop `mod helper;`
+- [x] **#25** `src-tauri/src/git_api_handler.rs:160,185` — `unwrap_or("")` → `Err("API response missing tag_name")`
+- [x] **#18** `src-tauri/src/app_content_handler.rs:64-85` — mutate in-place, single write (also removed dead `upd_repo`)
+- [x] **#17** `src-tauri/src/json_handler.rs:31` — produce `repos.json.tmp` not `repos.tmp`
+- [x] Smoke test: `cargo test --workspace` green
 - [ ] **Commit** — `refactor(backend): cleanup & tighten IO (BUGS #9 #17 #18 #25 #30)`
 
 ---
