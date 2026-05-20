@@ -76,8 +76,8 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 4. Add a migration in `migration.rs` to backfill the new config field.
 5. Add the option to the `<select>` in `frontend/index.html` and the `forgeLabel` switch in `frontend/app.js`.
 
-GitLab is stubbed but unimplemented — see the `TODO(gitlab)` comments in `git_api_handler.rs` and `migration.rs`.
+GitLab is implemented as of 3.4.0. Subgroup URL support (≥3 path segments) was added in the Batch 10c audit fixes.
 
 ### URL validation
 
-`isValidRepoUrl` in `frontend/app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with `host/owner/repo` path structure.
+`isValidRepoUrl` in `frontend/app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with at least two path segments (`host/owner/repo`). GitLab subgroup URLs with additional segments (`host/group/subgroup/project`) are valid; `parse_url` joins all segments except the last as the owner.

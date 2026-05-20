@@ -338,44 +338,44 @@ function openEditDialog(url, hostKind) {
 }
 // Edit dialog
 editDialog.addEventListener("close", async () => {
+  // Capture editingUrl immediately so a concurrent openEditDialog() call
+  // cannot clobber it before the await below completes (#42).
+  const oldUrl = editingUrl;
+  editingUrl = null;
+
   if (editDialog.returnValue !== "save") {
-    editingUrl = null;
     return;
   }
 
   const newUrl = editUrlInput.value.trim();
   const newHostKind = editHostSelect.value;
 
-  if (!editingUrl || !newUrl) {
-    editingUrl = null;
+  if (!oldUrl || !newUrl) {
     return;
   }
   if (!isValidRepoUrl(newUrl)) {
     ot.toast("URL must be https://host/owner/repo", "Invalid URL", {
       variant: "danger",
     });
-    editingUrl = null;
     return;
   }
 
   const host_url = extractHostUrl(newUrl);
 
   try {
-    await invoke("edit_repo", { oldUrl: editingUrl, newUrl, host: host_url, forge: newHostKind });
+    await invoke("edit_repo", { oldUrl, newUrl, host: host_url, forge: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Update failed", { variant: "danger" });
-  } finally {
-    editingUrl = null;
   }
 });
 
 // Mirrors parse_url in git_api_handler.rs — must stay in sync with Rust validation.
+// Accepts 2+ path segments so GitLab subgroup URLs work
+// (e.g. https://gitlab.com/group/subgroup/project).
 function isValidRepoUrl(url) {
-  return /^https:\/\/[a-zA-Z0-9._:-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/?$/.test(
-    url,
-  );
+  return /^https:\/\/[a-zA-Z0-9._:-]+(\/[a-zA-Z0-9._-]+){2,}\/?$/.test(url);
 }
 
 // ── Settings dialog ────────────────────────────────────────────────────────

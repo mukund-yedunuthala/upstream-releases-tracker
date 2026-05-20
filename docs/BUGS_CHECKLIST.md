@@ -173,12 +173,12 @@ Post-implementation audit of the work tracked in `docs/CHECKLIST-features.md` (G
 
 ## Batch 10c — Correctness regressions
 
-- [ ] **#42** `frontend/app.js:339-371` — Edit dialog's `close` handler `await`s `invoke("edit_repo", …)` then resets `editingUrl = null` in `finally`. If the user reopens the edit dialog mid-await, the finally clobbers the newly opened state and the subsequent save hits the `if (!editingUrl) return` early-return — silent no-op. Capture `editingUrl` into a local at the top of the handler and drop the module-level reset.
-- [ ] **#43** `src-tauri/src/git_api_handler.rs:20-44, 63-117` — `parse_url` still only captures two path segments, so GitLab subgroup URLs like `https://gitlab.com/group/subgroup/project` parse as `owner=group, repo=subgroup` and lose the leaf. GitLab feature ships incomplete; the BUGS.md #12 fix only solved scheme validation. Collect all segments and percent-encode them as the project slug.
-- [ ] **#50** `src-tauri/src/git_api_handler.rs:69-70` — GitLab project slug uses `format!("{}%2F{}", owner, repo)` with no encoding of `owner`/`repo`. The frontend regex blocks `%` and `/` today, but anything that ever loosens validation (e.g. supporting `.` group paths or Unicode) re-opens path injection into the GitLab API URL. Use `percent_encoding::utf8_percent_encode` over the `PATH_SEGMENT` set.
+- [x] **#42** `frontend/app.js:339-371` — Edit dialog's `close` handler `await`s `invoke("edit_repo", …)` then resets `editingUrl = null` in `finally`. If the user reopens the edit dialog mid-await, the finally clobbers the newly opened state and the subsequent save hits the `if (!editingUrl) return` early-return — silent no-op. Capture `editingUrl` into a local at the top of the handler and drop the module-level reset.
+- [x] **#43** `src-tauri/src/git_api_handler.rs:20-44, 63-117` — `parse_url` still only captures two path segments, so GitLab subgroup URLs like `https://gitlab.com/group/subgroup/project` parse as `owner=group, repo=subgroup` and lose the leaf. GitLab feature ships incomplete; the BUGS.md #12 fix only solved scheme validation. Collect all segments and percent-encode them as the project slug.
+- [x] **#50** `src-tauri/src/git_api_handler.rs:69-70` — GitLab project slug uses `format!("{}%2F{}", owner, repo)` with no encoding of `owner`/`repo`. The frontend regex blocks `%` and `/` today, but anything that ever loosens validation (e.g. supporting `.` group paths or Unicode) re-opens path injection into the GitLab API URL. Use `percent_encoding::utf8_percent_encode` over the `PATH_SEGMENT` set.
 - [ ] Smoke test: open edit dialog A → Save → during await reopen on repo B → Save → no silent no-op (validates #42)
 - [ ] Smoke test: add `https://gitlab.com/group/subgroup/project` → correct API URL used (validates #43)
-- [ ] **Commit** — `fix: edit-dialog race & GitLab subgroup support (BUGS #42 #43 #50)`
+- [x] **Commit** — `fix: edit-dialog race & GitLab subgroup support (BUGS #42 #43 #50)`
 
 ---
 

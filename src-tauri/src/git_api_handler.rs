@@ -17,6 +17,10 @@ fn http_client() -> &'static Client {
     })
 }
 
+/// Parses a repo URL into (owner, repo) where owner may be a slash-joined
+/// path for GitLab subgroups (e.g. "group/subgroup" from
+/// https://gitlab.com/group/subgroup/project). For GitHub and Forgejo
+/// URLs the owner is always a single segment.
 fn parse_url(url: &str) -> Result<(String, String), String> {
     if url.len() > 2048 {
         return Err("URL exceeds maximum allowed length of 2048 characters".to_string());
@@ -28,18 +32,16 @@ fn parse_url(url: &str) -> Result<(String, String), String> {
             parsed.scheme()
         ));
     }
-    let mut segments = parsed
+    let segments: Vec<&str> = parsed
         .path_segments()
         .ok_or_else(|| "URL has no path segments".to_string())?
-        .filter(|s| !s.is_empty());
-    let owner = segments
-        .next()
-        .ok_or_else(|| "URL is missing owner segment".to_string())?
-        .to_string();
-    let repo = segments
-        .next()
-        .ok_or_else(|| "URL is missing repository segment".to_string())?
-        .to_string();
+        .filter(|s| !s.is_empty())
+        .collect();
+    if segments.len() < 2 {
+        return Err("URL must have at least owner and repository segments".to_string());
+    }
+    let repo = segments[segments.len() - 1].to_string();
+    let owner = segments[..segments.len() - 1].join("/");
     Ok((owner, repo))
 }
 
@@ -65,8 +67,14 @@ async fn gitlab_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     // GitLab requires the project path to be URL-encoded as a single slug.
-    let project_slug = format!("{}%2F{}", owner, repo);
+    // The slash separator between namespace and project is the literal %2F;
+    // owner and repo segments are each percent-encoded over NON_ALPHANUMERIC
+    // so that dots, hyphens, and underscores are also encoded — a conservative
+    // choice that prevents path-injection if validation is relaxed later (#50).
+    let encode_segment = |s: &str| utf8_percent_encode(s, NON_ALPHANUMERIC).to_string();
+    let project_slug = format!("{}%2F{}", encode_segment(owner), encode_segment(repo));
     let api_url = format!("{}{}/releases", config.gitlab_endpoint, project_slug);
 
     let parsed = url::Url::parse(&api_url)
@@ -274,5 +282,52 @@ impl GitHandler {
             latest_release,
             system_version: old_repo.system_version.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_url;
+
+    #[test]
+    fn parse_url_github_flat() {
+        assert_eq!(
+            parse_url("https://github.com/torvalds/linux").unwrap(),
+            ("torvalds".to_string(), "linux".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_github_trailing_slash() {
+        assert_eq!(
+            parse_url("https://github.com/torvalds/linux/").unwrap(),
+            ("torvalds".to_string(), "linux".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_gitlab_subgroup() {
+        assert_eq!(
+            parse_url("https://gitlab.com/group/subgroup/project").unwrap(),
+            ("group/subgroup".to_string(), "project".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_gitlab_deep_subgroup() {
+        assert_eq!(
+            parse_url("https://gitlab.com/a/b/c/d").unwrap(),
+            ("a/b/c".to_string(), "d".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_rejects_http() {
+        assert!(parse_url("http://github.com/owner/repo").is_err());
+    }
+
+    #[test]
+    fn parse_url_rejects_single_segment() {
+        assert!(parse_url("https://github.com/owner").is_err());
     }
 }
