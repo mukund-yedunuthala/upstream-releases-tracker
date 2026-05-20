@@ -28,20 +28,20 @@ A coding agent picking this up cold should:
 - [x] **#13** `frontend/app.js:3,5,250,259,289` — delete `editingHostKind` state
 - [x] **#20** `frontend/app.js:33-35` — delete dead `btoa(url)` id
 - [ ] Smoke test: edit existing repo → save unchanged → repo still present
-- [ ] **Commit** — `fix(frontend): repair edit dialog (BUGS #2 #3 #13 #20)`
+- [x] **Commit** — `fix(frontend): repair edit dialog (BUGS #2 #3 #13 #20)`
 
 ---
 
 ## Batch 2 — Config & dependency hygiene
 
-- [ ] **#6** `src-tauri/tauri.conf.json:14` — `withGlobalTauri: false`
-- [ ] **#11** `src-tauri/src/git_api_handler.rs:8-15` — `.timeout(15s)`, `.connect_timeout(5s)`
-- [ ] **#16** `src-tauri/Cargo.toml:29` — drop `"blocking"` from reqwest features
-- [ ] **#26** `Cargo.toml:15-16` — add `resolver = "2"` to `[workspace]`
-- [ ] **#22** `frontend/style.css:298-318` — delete duplicate mobile block
-- [ ] **#29** `frontend/style.css:142` — `1.125rem` → `var(--font-body)`
-- [ ] **#23** `frontend/index.html:26-30,66-70` — `maxlength="2048"` on both URL inputs
-- [ ] **#24** `frontend/index.html:50,74-81` — drop experimental `closedby`/`commandfor`/`command`, wire JS Cancel handler
+- [x] **#6** `src-tauri/tauri.conf.json:14` — `withGlobalTauri: false`
+- [x] **#11** `src-tauri/src/git_api_handler.rs:8-15` — `.timeout(15s)`, `.connect_timeout(5s)`
+- [x] **#16** `src-tauri/Cargo.toml:29` — drop `"blocking"` from reqwest features
+- [x] **#26** `Cargo.toml:15-16` — add `resolver = "2"` to `[workspace]`
+- [x] **#22** `frontend/style.css:298-318` — delete duplicate mobile block
+- [x] **#29** `frontend/style.css:142` — `1.125rem` → `var(--font-title)` (BUGS.md said `--font-body` but that's the wrong token; 1.125rem matches `--font-title`'s base value)
+- [x] **#23** `frontend/index.html:26-30,66-70` — `maxlength="2048"` on both URL inputs
+- [x] **#24** `frontend/index.html:50,74-81` — drop experimental `closedby`/`commandfor`/`command`, wire JS Cancel handler
 - [ ] Smoke test: `window.__TAURI__` undefined in DevTools; hung host times out ~15s
 - [ ] **Commit** — `chore: config & dependency hygiene (BUGS #6 #11 #16 #22 #23 #24 #26 #29)`
 

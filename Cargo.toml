@@ -13,4 +13,5 @@ toml = "=0.8.23"
 tracker_libs = { path = "./tracker_libs" }
 
 [workspace]
+resolver = "2"
 members = ["src-tauri", "tracker_libs"]

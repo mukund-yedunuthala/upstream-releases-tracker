@@ -138,7 +138,7 @@
 }
 
 .repo-card-title strong {
-    font-size: 1.125rem;
+    font-size: var(--font-title);
     font-weight: 600;
     line-height: 1.25;
 }
@@ -285,22 +285,6 @@
     #topbar-actions .group select {
         max-width: 100px;
         border-radius: var(--radius) 0 0 var(--radius);
-    }
-
-    #refresh-all-btn {
-        width: 100%;
-    }
-
-    .repo-card {
-        padding: var(--md) var(--lg);
-    }
-
-    #topbar-actions .group {
-        max-width: 100%;
-    }
-
-    #topbar-actions .group select {
-        max-width: 100px;
     }
 
     #refresh-all-btn {

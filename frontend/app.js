@@ -12,6 +12,9 @@ const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
 const editHostSelect = document.getElementById("edit-host-select");
+const editCancelBtn = document.getElementById("edit-cancel-btn");
+
+editCancelBtn.addEventListener("click", () => editDialog.close());
 
 // Maps ForgeKind enum variants to display labels
 function forgeLabel(hostKind) {

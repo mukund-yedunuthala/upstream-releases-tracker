@@ -10,6 +10,8 @@ fn http_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
             .user_agent("Upstream-Release-Tracker")
+            .timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("Failed to build HTTP client")
     })
