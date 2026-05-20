@@ -102,16 +102,16 @@ A coding agent picking this up cold should:
 - [x] **#8** All RMW commands serialized through `DataFileState.lock: tokio::sync::Mutex<()>`; HTTP calls happen outside the lock
 - [x] **#8** Edit delete+add still two separate calls from frontend (transactional wrap deferred — needs its own design)
 - [ ] Smoke test: spam Refresh All during a single Refresh → no lost writes; 9/10 success path reports counts
-- [ ] **Commit** — `perf+correctness: batched refresh & data-file mutex (BUGS #8 #10 #14)`
+- [x] **Commit** — `perf+correctness: batched refresh & data-file mutex (BUGS #8 #10 #14)`
 
 ---
 
 ## Batch 8 — Observability & card-rendering refactor
 
-- [ ] **#19** Add `tauri-plugin-log` (or `tracing` + file appender) wired in `run()`
-- [ ] **#19** Convert `eprintln!` in `src-tauri/src/migration.rs:54,56,60,92,96` to `log::warn!` / `log::error!`
-- [ ] **#21** Extract card template to `DocumentFragment` factory in `frontend/app.js`
-- [ ] **#21** Single delegated `click` handler on `#repo-grid` reading `data-action` + `closest('[data-url]')`
+- [x] **#19** Add `tauri-plugin-log` wired in `run()`; `log = "^0.4"` as direct dep
+- [x] **#19** Convert `eprintln!` in `src-tauri/src/migration.rs` to `log::info!` / `log::warn!` / `log::error!`
+- [x] **#21** Single delegated `click` handler on `#repo-grid` reading `data-action` + `closest('[data-url]')`; per-card listeners removed; host_kind stored in `card.dataset.hostKind`
+- [x] **#21** `openEditDialog` signature simplified (removed unused `name` param)
 - [ ] Smoke test: corrupt config → see error in log file; with 20 repos only one listener on the grid
 - [ ] **Commit** — `chore: logging plugin & card render delegation (BUGS #19 #21)`
 

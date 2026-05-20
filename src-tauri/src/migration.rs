@@ -61,12 +61,12 @@ pub fn run_migrations(datafile_path: &str) {
 
             if dirty {
                 match JSONHandler::write_json_file::<Value>(datafile_path, &raw) {
-                    Ok(_) => eprintln!("repos.json migration completed successfully."),
-                    Err(e) => eprintln!("Failed to write migrated repos.json: {}", e),
+                    Ok(_) => log::info!("repos.json migration completed successfully."),
+                    Err(e) => log::error!("Failed to write migrated repos.json: {}", e),
                 }
             }
         }
-        Err(e) => eprintln!("repos.json migration skipped: {}", e),
+        Err(e) => log::warn!("repos.json migration skipped: {}", e),
     }
 }
 
@@ -108,11 +108,11 @@ pub fn run_config_migrations(config_path: &str) {
 
             if dirty {
                 match JSONHandler::write_json_file::<Value>(config_path, &raw) {
-                    Ok(_) => eprintln!("config.json migration completed successfully."),
-                    Err(e) => eprintln!("Failed to write migrated config.json: {}", e),
+                    Ok(_) => log::info!("config.json migration completed successfully."),
+                    Err(e) => log::error!("Failed to write migrated config.json: {}", e),
                 }
             }
         }
-        Err(e) => eprintln!("config.json migration skipped: {}", e),
+        Err(e) => log::warn!("config.json migration skipped: {}", e),
     }
 }

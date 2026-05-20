@@ -16,6 +16,36 @@ const editCancelBtn = document.getElementById("edit-cancel-btn");
 
 editCancelBtn.addEventListener("click", () => editDialog.close());
 
+// Delegated handler for all card action buttons — one listener for all cards.
+repoGrid.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const card = btn.closest("[data-url]");
+  if (!card) return;
+  const url = card.dataset.url;
+  switch (btn.dataset.action) {
+    case "refresh":
+      handleRefresh(btn, url);
+      break;
+    case "mark-updated":
+      handleMarkAsUpdated(url);
+      break;
+    case "edit":
+      openEditDialog(url, card.dataset.hostKind);
+      break;
+    case "delete-trigger":
+      card.querySelector(".delete-popover").hidden = false;
+      break;
+    case "delete-cancel":
+      card.querySelector(".delete-popover").hidden = true;
+      break;
+    case "confirm-delete":
+      card.querySelector(".delete-popover").hidden = true;
+      handleDelete(url);
+      break;
+  }
+});
+
 // Maps ForgeKind enum variants to display labels
 function forgeLabel(hostKind) {
   switch (hostKind) {
@@ -104,44 +134,8 @@ function buildCard(url, data) {
   link.textContent = shortUrl;
   card.querySelector(".js-card-latest").textContent = latest;
   card.querySelector(".js-card-system").textContent = system;
-
-  // Refresh
-  card
-    .querySelector('[data-action="refresh"]')
-    .addEventListener("click", (e) => handleRefresh(e.currentTarget, url));
-
-  // Mark as updated
-  card
-    .querySelector('[data-action="mark-updated"]')
-    .addEventListener("click", () => handleMarkAsUpdated(url));
-
-  // Edit
-  card
-    .querySelector('[data-action="edit"]')
-    .addEventListener("click", () => openEditDialog(url, name, data.host_kind));
-
-  // Delete trigger: show the inline popover
-  const deletePopover = card.querySelector(".delete-popover");
-  card
-    .querySelector('[data-action="delete-trigger"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = false;
-    });
-
-  // Cancel: hide it again
-  card
-    .querySelector('[data-action="delete-cancel"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = true;
-    });
-
-  // Confirm delete
-  card
-    .querySelector('[data-action="confirm-delete"]')
-    .addEventListener("click", () => {
-      deletePopover.hidden = true;
-      handleDelete(url);
-    });
+  // Store host_kind for the delegated edit handler (see repoGrid click listener)
+  card.dataset.hostKind = data.host_kind || "";
 
   return card;
 }
@@ -269,7 +263,7 @@ async function handleDelete(url) {
 }
 
 // Edit dialog open
-function openEditDialog(url, name, hostKind) {
+function openEditDialog(url, hostKind) {
   editingUrl = url;
   editUrlInput.value = url;
   editHostSelect.value = hostKind;

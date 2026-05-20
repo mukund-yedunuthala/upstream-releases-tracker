@@ -210,6 +210,7 @@ pub fn run() {
             path: data_path,
             lock: tokio::sync::Mutex::new(()),
         })
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_repos,
