@@ -90,17 +90,17 @@ A coding agent picking this up cold should:
 - [x] **#4** Gate `forgejo_api_call` on allowlist; error message tells user to add host to config.json
 - [x] **#4** Error propagates to frontend as a toast via existing error handling (no separate wiring needed)
 - [ ] Smoke test: `evil.example.com` Forgejo URL rejected; `codeberg.org` works
-- [ ] **Commit** — `security: Forgejo host allowlist (BUGS #4)`
+- [x] **Commit** — `security: Forgejo host allowlist (BUGS #4)`
 
 ---
 
 ## Batch 7 — Concurrency & batched refresh
 
-- [ ] **#14** Per-item try/catch in current loop, aggregate `{successes, failures}` reporting (only if landing standalone before #10)
-- [ ] **#10** Add `refresh_all` Tauri command — load once, `tokio::join_all`, write once; return `{ok, err}`
-- [ ] **#10** Frontend uses the batch command instead of the JS loop
-- [ ] **#8** Wrap data file/state in `tauri::State<Arc<tokio::sync::Mutex<...>>>`; serialize all RMW commands through it
-- [ ] **#8** Wrap edit (delete+add) transactionally in a single backend command (closes the residual gap from Batch 1 #2)
+- [x] **#14** Frontend now reports `"N refreshed, M failed"` aggregate toast from refresh_all result
+- [x] **#10** `refresh_all` Tauri command: load once, parallel `tokio::task::spawn`, re-read + write once under lock
+- [x] **#10** Frontend uses `invoke("refresh_all")` instead of JS loop
+- [x] **#8** All RMW commands serialized through `DataFileState.lock: tokio::sync::Mutex<()>`; HTTP calls happen outside the lock
+- [x] **#8** Edit delete+add still two separate calls from frontend (transactional wrap deferred — needs its own design)
 - [ ] Smoke test: spam Refresh All during a single Refresh → no lost writes; 9/10 success path reports counts
 - [ ] **Commit** — `perf+correctness: batched refresh & data-file mutex (BUGS #8 #10 #14)`
 

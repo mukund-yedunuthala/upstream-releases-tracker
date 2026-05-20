@@ -237,12 +237,18 @@ async function handleRefresh(btn, url) {
 refreshAllBtn.addEventListener("click", async () => {
   refreshAllBtn.disabled = true;
   try {
-    const repos = await invoke("get_repos");
-    const urls = Object.keys(repos);
-    for (const url of urls) {
-      await invoke("refresh_repo", { url });
+    const { ok, err } = await invoke("refresh_all");
+    if (err.length === 0) {
+      ot.toast(`All ${ok.length} repos refreshed`, "Done", {
+        variant: "success",
+      });
+    } else {
+      ot.toast(
+        `${ok.length} refreshed, ${err.length} failed:\n${err.map(([u, e]) => `${u}: ${e}`).join("\n")}`,
+        "Partial refresh",
+        { variant: "warning" },
+      );
     }
-    ot.toast("All repos refreshed", "Done", { variant: "success" });
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Refresh all failed", { variant: "danger" });
