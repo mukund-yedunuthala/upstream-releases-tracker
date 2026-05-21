@@ -1,4 +1,4 @@
-name: 'publish'
+name: Build Windows NSIS Installer
 
 on:
   push:
@@ -6,33 +6,40 @@ on:
       - release
   workflow_dispatch:
 
-concurrency:
-  group: release-build
-  cancel-in-progress: true
-
 jobs:
-  publish-tauri:
-    permissions:
-      contents: write
+  build-windows:
     runs-on: windows-latest
+    if: github.ref == 'refs/heads/release'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install Rust stable
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build artifacts
-        uses: swatinem/rust-cache@v2
-
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
         with:
-          projectPath: src-tauri
-          args: --bundles nsis
-          tagName: v__VERSION__
-          releaseName: 'Upstream Releases Tracker v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: true
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Tauri NSIS installer
+        run: cargo tauri build --bundles nsis
+        working-directory: src-tauri
+
+      - name: Upload NSIS installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe

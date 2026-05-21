@@ -5,10 +5,10 @@
   "version": "3.4.3",
   "identifier": "page.mukundyedunuthala.upstream-releases-tracker",
   "build": {
-    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "cd ../frontend && npm ci && npm run build",
-    "frontendDist": "../frontend/dist"
+    "beforeBuildCommand": "npm ci && npm run build",
+    "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": false,
