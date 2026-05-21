@@ -9,7 +9,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    if: github.ref == 'refs/heads/release'
+
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v6
@@ -17,25 +19,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          cache: 'npm'
+          node-version: 24
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: src-tauri
 
       - name: Build Tauri NSIS installer
-        run: cargo tauri build --bundles nsis
+        run: npx tauri build --bundles nsis
         working-directory: src-tauri
 
       - name: Upload NSIS installer artifact
