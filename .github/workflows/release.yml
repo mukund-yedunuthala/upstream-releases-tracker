@@ -33,10 +33,13 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Build Tauri NSIS installer
-        run: npx tauri build --bundles nsis
-        working-directory: src-tauri
-
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles nsis
+      
       - name: Upload NSIS installer artifact
         uses: actions/upload-artifact@v4
         with:
