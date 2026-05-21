@@ -234,11 +234,14 @@
 }
 
 /* ── Settings dialog ── */
+#settings-dialog {
+    width: min(560px, 92vw);
+}
+
 #settings-dialog form {
     display: flex;
     flex-direction: column;
     gap: var(--md);
-    width: min(560px, 92vw);
     max-height: 80vh;
 }
 
