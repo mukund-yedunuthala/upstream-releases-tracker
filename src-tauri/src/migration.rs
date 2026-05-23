@@ -45,6 +45,15 @@ pub fn run_migrations(datafile_path: &str) {
                             );
                             dirty = true;
                         }
+
+                        // Migration 6: add "release_notes" if absent.
+                        if !obj.contains_key("release_notes") {
+                            obj.insert(
+                                "release_notes".to_string(),
+                                Value::String(String::new()),
+                            );
+                            dirty = true;
+                        }
                     }
                 }
             }

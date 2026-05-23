@@ -182,6 +182,89 @@
     border-radius: var(--radius-sm);
 }
 
+/* ── Release notes expand/collapse ── */
+.repo-card-notes {
+    font-size: var(--font-muted);
+    border-top: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+    padding-top: var(--sm);
+}
+
+.repo-card-notes summary {
+    cursor: pointer;
+    opacity: 0.6;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--xs);
+}
+
+.repo-card-notes summary::before {
+    content: "▶";
+    display: inline-block;
+    font-size: 0.6rem;
+    transition: transform 0.15s ease;
+}
+
+.repo-card-notes[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.repo-card-notes summary:hover {
+    opacity: 0.85;
+}
+
+.repo-card-notes[data-empty] summary {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+}
+
+.repo-card-notes pre {
+    margin: var(--sm) 0 0;
+    max-height: 14rem;
+    overflow-y: auto;
+    padding: var(--sm) var(--md);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, currentColor 6%, transparent);
+    font-size: 0.8rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.repo-card-notes pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* ── Copy-to-clipboard ── */
+.repo-card-meta code[data-copy] {
+    cursor: pointer;
+    position: relative;
+    transition: background 0.1s;
+}
+
+.repo-card-meta code[data-copy]:hover {
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.repo-card-meta code[data-copy].copied::after {
+    content: "Copied!";
+    position: absolute;
+    top: -1.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: color-mix(in srgb, currentColor 15%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.45rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
 /* ── Card actions ── */
 .repo-card-actions {
     display: flex;

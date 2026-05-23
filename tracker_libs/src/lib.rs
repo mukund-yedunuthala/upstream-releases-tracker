@@ -55,4 +55,6 @@ pub struct RepoData {
     pub host_kind: ForgeKind, // user-selected forge type
     pub latest_release: String,
     pub system_version: String,
+    #[serde(default)]
+    pub release_notes: String,
 }

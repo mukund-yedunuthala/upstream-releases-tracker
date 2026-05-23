@@ -70,6 +70,15 @@ editCancelBtn.addEventListener("click", () => editDialog.close());
 
 // Delegated handler for all card action buttons — one listener for all cards.
 repoGrid.addEventListener("click", (e) => {
+  const copyEl = e.target.closest("[data-copy]");
+  if (copyEl && copyEl.textContent && copyEl.textContent !== "—") {
+    navigator.clipboard.writeText(copyEl.textContent).then(() => {
+      copyEl.classList.add("copied");
+      setTimeout(() => copyEl.classList.remove("copied"), 1500);
+    });
+    return;
+  }
+
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
   const card = btn.closest("[data-url]");
@@ -161,12 +170,16 @@ function buildCard(url, data) {
     </header>
     <div class="repo-card-meta">
       <span>Latest release</span>
-      <code class="js-card-latest"></code>
+      <code class="js-card-latest" data-copy title="Click to copy"></code>
     </div>
     <div class="repo-card-meta">
       <span>Installed version</span>
-      <code class="js-card-system"></code>
+      <code class="js-card-system" data-copy title="Click to copy"></code>
     </div>
+    <details class="repo-card-notes">
+      <summary>Release notes</summary>
+      <pre><code class="js-card-notes"></code></pre>
+    </details>
     <footer class="repo-card-actions">
       <button class="small outline" data-action="refresh">Refresh</button>
       <button class="small outline" data-action="mark-updated">Mark as updated</button>
@@ -199,6 +212,19 @@ function buildCard(url, data) {
   link.textContent = shortUrl;
   card.querySelector(".js-card-latest").textContent = latest;
   card.querySelector(".js-card-system").textContent = system;
+
+  const notes = data.release_notes || "";
+  const notesEl = card.querySelector(".repo-card-notes");
+  if (notes) {
+    card.querySelector(".js-card-notes").textContent = notes;
+  } else {
+    notesEl.dataset.empty = "";
+  }
+
+  if (isUpToDate) {
+    card.querySelector("[data-action='mark-updated']").hidden = true;
+  }
+
   // Store host_kind for the delegated edit handler (see repoGrid click listener)
   card.dataset.hostKind = data.host_kind || "";
 
