@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -28,14 +28,16 @@
                     <button
                         class="outline"
                         id="refresh-all-btn"
-                        title="Refresh all repos"
+                        data-tooltip="Refresh all repos"
+                        data-tooltip-placement="bottom"
                     >
                         Refresh all
                     </button>
                     <button
                         class="outline"
                         id="settings-btn"
-                        title="Settings"
+                        data-tooltip="Open settings"
+                        data-tooltip-placement="bottom"
                         aria-label="Open settings"
                     >
                         Settings
@@ -88,146 +90,137 @@
             <form method="dialog">
                 <header>
                     <h3>Settings</h3>
-                    <nav id="settings-tabs" class="tab-bar">
-                        <button
-                            type="button"
-                            class="tab-btn active"
-                            data-tab="api-keys"
-                        >
-                            API Keys
-                        </button>
-                        <button
-                            type="button"
-                            class="tab-btn"
-                            data-tab="endpoints"
-                        >
-                            Endpoints
-                        </button>
-                        <button type="button" class="tab-btn" data-tab="logs">
-                            Logs
-                        </button>
-                        <button type="button" class="tab-btn" data-tab="about">
-                            About
-                        </button>
-                    </nav>
                 </header>
 
-                <section class="settings-section" data-section="api-keys">
-                    <p class="settings-help">
-                        Tokens are stored locally in an encrypted vault. They
-                        never leave your machine except as auth headers to the
-                        forge you configured.
-                    </p>
-                    <label data-field>
-                        GitHub token
-                        <input
-                            type="password"
-                            id="settings-github-key"
-                            autocomplete="off"
-                            spellcheck="false"
-                        />
-                    </label>
-                    <label data-field>
-                        GitLab token
-                        <input
-                            type="password"
-                            id="settings-gitlab-key"
-                            autocomplete="off"
-                            spellcheck="false"
-                        />
-                    </label>
-                    <label data-field>
-                        Forgejo / Gitea token
-                        <input
-                            type="password"
-                            id="settings-forgejo-key"
-                            autocomplete="off"
-                            spellcheck="false"
-                        />
-                    </label>
-                    <label data-field>
-                        <input
-                            type="checkbox"
-                            id="settings-show-keys"
-                        />
-                        Show tokens
-                    </label>
-                </section>
-
-                <section
-                    class="settings-section"
-                    data-section="endpoints"
-                    hidden
-                >
-                    <label data-field>
-                        GitHub endpoint
-                        <input
-                            type="url"
-                            id="settings-github-endpoint"
-                            placeholder="https://api.github.com/repos/"
-                            maxlength="2048"
-                        />
-                    </label>
-                    <label data-field>
-                        GitLab endpoint
-                        <input
-                            type="url"
-                            id="settings-gitlab-endpoint"
-                            placeholder="https://gitlab.com/api/v4/projects/"
-                            maxlength="2048"
-                        />
-                    </label>
-                    <label data-field>
-                        Forgejo trusted hosts (one per line)
-                        <textarea
-                            id="settings-forgejo-hosts"
-                            rows="4"
-                            placeholder="codeberg.org"
-                        ></textarea>
-                    </label>
-                </section>
-
-                <section class="settings-section" data-section="logs" hidden>
-                    <div class="logs-toolbar">
-                        <button
-                            type="button"
-                            id="settings-logs-refresh"
-                            class="outline"
-                        >
-                            Refresh
+                <ot-tabs id="settings-tabs">
+                    <div role="tablist">
+                        <button type="button" role="tab" aria-selected="true">
+                            API Keys
                         </button>
-                        <span id="settings-logs-status" class="muted"></span>
+                        <button type="button" role="tab">
+                            Endpoints &amp; Hosts
+                        </button>
+                        <button type="button" role="tab">
+                            Logs
+                        </button>
+                        <button type="button" role="tab">
+                            About
+                        </button>
                     </div>
-                    <pre id="settings-logs-output"></pre>
-                </section>
 
-                <section class="settings-section" data-section="about" hidden>
-                    <h4>Upstream Releases Tracker</h4>
-                    <p>Version <span id="settings-app-version">…</span></p>
-                    <p class="muted">
-                        Tracks release tags across GitHub, GitLab and
-                        Forgejo / Gitea, and compares them to versions you have
-                        installed.
-                    </p>
-                    <p>
-                        Licensed under
-                        <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>.
-                        Source code at
-                        <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs">gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs</a>.
-                    </p>
-                    <p class="muted">
-                        No telemetry or analytics are collected. API tokens are
-                        stored in an encrypted local vault and transmitted only
-                        as authentication headers to the forge endpoints you
-                        configure. All other data is stored locally on your
-                        device.
-                    </p>
-                    <p class="muted">
-                        This application includes open-source components. See
-                        <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs/-/blob/main/docs/NOTICES">NOTICES</a>
-                        in the source repository for third-party attributions.
-                    </p>
-                </section>
+                    <div role="tabpanel">
+                        <p class="settings-help">
+                            Tokens are stored locally in an encrypted vault. They
+                            never leave your machine except as auth headers to the
+                            forge you configured.
+                        </p>
+                        <label data-field>
+                            GitHub token
+                            <input
+                                type="password"
+                                id="settings-github-key"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
+                        </label>
+                        <label data-field>
+                            GitLab token
+                            <input
+                                type="password"
+                                id="settings-gitlab-key"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
+                        </label>
+                        <label data-field>
+                            Forgejo / Gitea token
+                            <input
+                                type="password"
+                                id="settings-forgejo-key"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
+                        </label>
+                        <label data-field>
+                            <input
+                                type="checkbox"
+                                id="settings-show-keys"
+                            />
+                            Show tokens
+                        </label>
+                    </div>
+
+                    <div role="tabpanel" hidden>
+                        <label data-field>
+                            GitHub endpoint
+                            <input
+                                type="url"
+                                id="settings-github-endpoint"
+                                placeholder="https://api.github.com/repos/"
+                                maxlength="2048"
+                            />
+                        </label>
+                        <label data-field>
+                            GitLab endpoint
+                            <input
+                                type="url"
+                                id="settings-gitlab-endpoint"
+                                placeholder="https://gitlab.com/api/v4/projects/"
+                                maxlength="2048"
+                            />
+                        </label>
+                        <label data-field>
+                            Forgejo trusted hosts (one per line)
+                            <textarea
+                                id="settings-forgejo-hosts"
+                                rows="4"
+                                placeholder="codeberg.org"
+                            ></textarea>
+                        </label>
+                    </div>
+
+                    <div role="tabpanel" hidden>
+                        <div class="logs-toolbar">
+                            <button
+                                type="button"
+                                id="settings-logs-refresh"
+                                class="outline"
+                            >
+                                Refresh
+                            </button>
+                            <span id="settings-logs-status" class="muted"></span>
+                        </div>
+                        <pre id="settings-logs-output"></pre>
+                    </div>
+
+                    <div role="tabpanel" hidden>
+                        <h4>Upstream Releases Tracker</h4>
+                        <p>Version <span id="settings-app-version">…</span></p>
+                        <p class="muted">
+                            Tracks release tags across GitHub, GitLab and
+                            Forgejo / Gitea, and compares them to versions you have
+                            installed.
+                        </p>
+                        <p>
+                            Licensed under
+                            <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>.
+                            Source code at
+                            <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs">gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs</a>.
+                        </p>
+                        <p class="muted">
+                            No telemetry or analytics are collected. API tokens are
+                            stored in an encrypted local vault and transmitted only
+                            as authentication headers to the forge endpoints you
+                            configure. All other data is stored locally on your
+                            device.
+                        </p>
+                        <p class="muted">
+                            This application includes open-source components. See
+                            <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs/-/blob/main/docs/NOTICES">NOTICES</a>
+                            in the source repository for third-party attributions.
+                        </p>
+                    </div>
+                </ot-tabs>
 
                 <footer>
                     <button

@@ -138,7 +138,7 @@ function forgeLabel(hostKind) {
 function buildCard(url, data) {
   const isUpToDate =
     !!data.system_version && data.system_version === data.latest_release;
-  const badgeClass = isUpToDate ? "success" : "warning";
+  const badgeVariant = isUpToDate ? "success" : "warning";
   const badgeText = isUpToDate ? "Up to date" : "Update available";
   // Only allow https: URLs in the href to prevent javascript: injection
   const safeUrl = url.startsWith("https://") ? url : null;
@@ -149,9 +149,6 @@ function buildCard(url, data) {
       : shortUrl;
   const latest = data.latest_release || "—";
   const system = data.system_version || "—";
-  const hostSlug =
-    data.host_kind?.toLowerCase().replace("compatible", "") || "unknown";
-
   const card = document.createElement("article");
   card.className = "card repo-card";
   card.dataset.url = url;
@@ -164,18 +161,16 @@ function buildCard(url, data) {
         <span class="js-card-badge"></span>
       </div>
       <div class="repo-card-subtitle">
-        <span class="js-card-host-badge host-badge"></span>
+        <span class="js-card-host-badge badge outline"></span>
         <a class="repo-url js-card-url"></a>
       </div>
     </header>
-    <div class="repo-card-meta">
-      <span>Latest release</span>
-      <code class="js-card-latest" data-copy title="Click to copy"></code>
-    </div>
-    <div class="repo-card-meta">
-      <span>Installed version</span>
-      <code class="js-card-system" data-copy title="Click to copy"></code>
-    </div>
+    <dl class="repo-card-meta">
+      <dt>Latest release</dt>
+      <dd><code class="js-card-latest" data-copy data-tooltip="Click to copy"></code></dd>
+      <dt>Installed version</dt>
+      <dd><code class="js-card-system" data-copy data-tooltip="Click to copy"></code></dd>
+    </dl>
     <details class="repo-card-notes">
       <summary>Release notes</summary>
       <pre><code class="js-card-notes"></code></pre>
@@ -202,10 +197,10 @@ function buildCard(url, data) {
   // Inject all dynamic data via DOM — never via innerHTML interpolation
   card.querySelector(".js-card-name").textContent = name;
   const badge = card.querySelector(".js-card-badge");
-  badge.className = `badge ${badgeClass}`;
+  badge.className = "badge";
+  badge.dataset.variant = badgeVariant;
   badge.textContent = badgeText;
   const hostBadge = card.querySelector(".js-card-host-badge");
-  hostBadge.classList.add(`host-badge--${hostSlug}`);
   hostBadge.textContent = forgeLabel(data.host_kind);
   const link = card.querySelector(".js-card-url");
   if (safeUrl) link.href = safeUrl;
@@ -275,6 +270,7 @@ addBtn.addEventListener("click", async () => {
   }
 
   addBtn.disabled = true;
+  addBtn.setAttribute("aria-busy", "true");
   try {
     await invoke("add_repo", { url, host, forge });
     ot.toast("Repository added", "Done", { variant: "success" });
@@ -284,6 +280,7 @@ addBtn.addEventListener("click", async () => {
     ot.toast(String(e), "Add repo failed", { variant: "danger" });
   } finally {
     addBtn.disabled = false;
+    addBtn.removeAttribute("aria-busy");
   }
 });
 
@@ -307,6 +304,7 @@ urlInput.addEventListener("keydown", (ev) => {
 // Refresh single repo
 async function handleRefresh(btn, url) {
   btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
   try {
     await invoke("refresh_repo", { url });
     ot.toast("Repo refreshed", "Done", { variant: "success" });
@@ -315,12 +313,14 @@ async function handleRefresh(btn, url) {
     ot.toast(String(e), "Refresh failed", { variant: "danger" });
   } finally {
     btn.disabled = false;
+    btn.removeAttribute("aria-busy");
   }
 }
 
 // Refresh all repos
 refreshAllBtn.addEventListener("click", async () => {
   refreshAllBtn.disabled = true;
+  refreshAllBtn.setAttribute("aria-busy", "true");
   try {
     const { ok, err } = await invoke("refresh_all");
     if (err.length === 0) {
@@ -339,6 +339,7 @@ refreshAllBtn.addEventListener("click", async () => {
     ot.toast(String(e), "Refresh all failed", { variant: "danger" });
   } finally {
     refreshAllBtn.disabled = false;
+    refreshAllBtn.removeAttribute("aria-busy");
   }
 });
 
@@ -407,7 +408,6 @@ const settingsDialog = document.getElementById("settings-dialog");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsSaveBtn = document.getElementById("settings-save-btn");
 const settingsTabs = document.getElementById("settings-tabs");
-const settingsSections = document.querySelectorAll(".settings-section");
 const settingsShowKeys = document.getElementById("settings-show-keys");
 const settingsLogsRefresh = document.getElementById("settings-logs-refresh");
 const settingsLogsOutput = document.getElementById("settings-logs-output");
@@ -558,20 +558,8 @@ function populateSettingsInputs() {
     settingsState.endpoints.forgejoHosts.join("\n");
 }
 
-function activateTab(name) {
-  settingsTabs.querySelectorAll(".tab-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.tab === name);
-  });
-  settingsSections.forEach((section) => {
-    section.hidden = section.dataset.section !== name;
-  });
-}
-
-settingsTabs.addEventListener("click", (e) => {
-  const btn = e.target.closest(".tab-btn");
-  if (!btn) return;
-  activateTab(btn.dataset.tab);
-  if (btn.dataset.tab === "logs") {
+settingsTabs.addEventListener("ot-tab-change", (e) => {
+  if (e.detail.tab?.textContent.trim() === "Logs") {
     refreshLogs();
   }
 });
@@ -585,7 +573,7 @@ settingsShowKeys.addEventListener("change", () => {
 
 settingsBtn.addEventListener("click", () => {
   populateSettingsInputs();
-  activateTab("api-keys");
+  settingsTabs.activeIndex = 0;
   settingsShowKeys.checked = false;
   settingsInputs.github.type = "password";
   settingsInputs.gitlab.type = "password";
@@ -631,6 +619,7 @@ settingsSaveBtn.addEventListener("click", async () => {
   };
 
   settingsSaveBtn.disabled = true;
+  settingsSaveBtn.setAttribute("aria-busy", "true");
   try {
     // Persist secrets to Stronghold — vault must be initialised.
     if (!settingsState.vaultStore || !settingsState.stronghold) {
@@ -673,6 +662,7 @@ settingsSaveBtn.addEventListener("click", async () => {
     ot.toast(String(e), "Save failed", { variant: "danger" });
   } finally {
     settingsSaveBtn.disabled = false;
+    settingsSaveBtn.removeAttribute("aria-busy");
   }
 });
 
