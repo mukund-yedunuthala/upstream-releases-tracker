@@ -144,23 +144,9 @@
                     <h3>Settings</h3>
                 </header>
 
-                <ot-tabs id="settings-tabs">
-                    <div role="tablist">
-                        <button type="button" role="tab" aria-selected="true">
-                            API Keys
-                        </button>
-                        <button type="button" role="tab">
-                            Endpoints &amp; Hosts
-                        </button>
-                        <button type="button" role="tab">
-                            Logs
-                        </button>
-                        <button type="button" role="tab">
-                            About
-                        </button>
-                    </div>
-
-                    <div role="tabpanel">
+                <div id="settings-sections">
+                    <section class="settings-section">
+                        <h4>API Keys</h4>
                         <p class="settings-help">
                             Tokens are stored locally in an encrypted vault. They
                             never leave your machine except as auth headers to the
@@ -210,9 +196,10 @@
                             />
                             Show tokens
                         </label>
-                    </div>
+                    </section>
 
-                    <div role="tabpanel" hidden>
+                    <section class="settings-section">
+                        <h4>Endpoints &amp; Hosts</h4>
                         <label data-field>
                             GitHub endpoint
                             <input
@@ -239,9 +226,10 @@
                                 placeholder="codeberg.org"
                             ></textarea>
                         </label>
-                    </div>
+                    </section>
 
-                    <div role="tabpanel" hidden>
+                    <section class="settings-section">
+                        <h4>Logs</h4>
                         <div class="logs-toolbar">
                             <button
                                 type="button"
@@ -253,10 +241,10 @@
                             <small id="settings-logs-status" class="text-light"></small>
                         </div>
                         <pre id="settings-logs-output"></pre>
-                    </div>
+                    </section>
 
-                    <div role="tabpanel" hidden>
-                        <h4>Upstream Releases Tracker</h4>
+                    <section class="settings-section">
+                        <h4>About</h4>
                         <dl class="settings-about">
                             <dt>Version</dt>
                             <dd><span id="settings-app-version">…</span></dd>
@@ -285,8 +273,8 @@
                             configure. All other data is stored locally on your
                             device.
                         </p>
-                    </div>
-                </ot-tabs>
+                    </section>
+                </div>
 
                 <footer>
                     <button

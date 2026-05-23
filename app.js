@@ -573,7 +573,6 @@ function isValidRepoUrl(url) {
 const settingsDialog = document.getElementById("settings-dialog");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsSaveBtn = document.getElementById("settings-save-btn");
-const settingsTabs = document.getElementById("settings-tabs");
 const settingsShowKeys = document.getElementById("settings-show-keys");
 const settingsLogsRefresh = document.getElementById("settings-logs-refresh");
 const settingsLogsOutput = document.getElementById("settings-logs-output");
@@ -724,12 +723,6 @@ function populateSettingsInputs() {
     settingsState.endpoints.forgejoHosts.join("\n");
 }
 
-settingsTabs.addEventListener("ot-tab-change", (e) => {
-  if (e.detail.tab?.textContent.trim() === "Logs") {
-    refreshLogs();
-  }
-});
-
 settingsShowKeys.addEventListener("change", () => {
   const type = settingsShowKeys.checked ? "text" : "password";
   settingsInputs.github.type = type;
@@ -739,12 +732,13 @@ settingsShowKeys.addEventListener("change", () => {
 
 settingsBtn.addEventListener("click", () => {
   populateSettingsInputs();
-  settingsTabs.activeIndex = 0;
   settingsShowKeys.checked = false;
   settingsInputs.github.type = "password";
   settingsInputs.gitlab.type = "password";
   settingsInputs.forgejo.type = "password";
   settingsDialog.showModal();
+  document.getElementById("settings-sections")?.scrollTo({ top: 0 });
+  refreshLogs();
 });
 
 async function refreshLogs() {
