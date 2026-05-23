@@ -8,6 +8,7 @@ import "@knadh/oat/oat.min.css";
 import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
+let deletingUrl = null;
 
 // Settings runtime state — populated at startup, written back on save.
 const VAULT_FILE = "vault.hold";
@@ -58,8 +59,20 @@ function stringToBytes(value) {
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
 const urlInput = document.getElementById("repo-url-input");
+const repoAddField = document.getElementById("repo-add-field");
 const addBtn = document.getElementById("add-repo-btn");
 const refreshAllBtn = document.getElementById("refresh-all-btn");
+
+function setRepoUrlError(message) {
+  if (message) {
+    repoAddField.setAttribute("data-field", "error");
+    urlInput.setAttribute("aria-invalid", "true");
+    document.getElementById("repo-url-error").textContent = message;
+  } else {
+    repoAddField.setAttribute("data-field", "");
+    urlInput.removeAttribute("aria-invalid");
+  }
+}
 const editDialog = document.getElementById("edit-dialog");
 const editUrlInput = document.getElementById("edit-url-input");
 const hostSelect = document.getElementById("repo-host-select");
@@ -94,15 +107,8 @@ repoGrid.addEventListener("click", (e) => {
     case "edit":
       openEditDialog(url, card.dataset.hostKind);
       break;
-    case "delete-trigger":
-      card.querySelector(".delete-popover").hidden = false;
-      break;
-    case "delete-cancel":
-      card.querySelector(".delete-popover").hidden = true;
-      break;
-    case "confirm-delete":
-      card.querySelector(".delete-popover").hidden = true;
-      handleDelete(url);
+    case "delete":
+      openDeleteDialog(url);
       break;
   }
 });
@@ -179,18 +185,7 @@ function buildCard(url, data) {
       <button class="small outline" data-action="refresh">Refresh</button>
       <button class="small outline" data-action="mark-updated">Mark as updated</button>
       <button class="small outline" data-action="edit">Edit</button>
-      <button class="small outline" data-variant="danger" data-action="delete-trigger">Delete</button>
-      <article class="card delete-popover" hidden>
-        <header>
-          <h4>Delete repo?</h4>
-          <p>This cannot be undone.</p>
-        </header>
-        <br />
-        <footer>
-          <button class="outline small" data-action="delete-cancel">Cancel</button>
-          <button data-variant="danger" class="small" data-action="confirm-delete">Confirm delete</button>
-        </footer>
-      </article>
+      <button class="small outline" data-variant="danger" data-action="delete">Delete</button>
     </footer>
   `;
 
@@ -237,18 +232,162 @@ async function handleMarkAsUpdated(url) {
   }
 }
 
-// Load all repos
-async function loadRepos() {
-  try {
-    const repos = await invoke("get_repos");
+// Toolbar + status footer
+const repoToolbar = document.getElementById("repo-toolbar");
+const repoSearch = document.getElementById("repo-search");
+const repoFilter = document.getElementById("repo-filter");
+const repoSort = document.getElementById("repo-sort");
+const appStatus = document.getElementById("app-status");
+const appStatusCounts = document.getElementById("app-status-counts");
+const appStatusRefresh = document.getElementById("app-status-refresh");
+
+let allRepos = [];
+let viewState = { search: "", filter: "all", sort: "name" };
+let lastRefreshAt = null;
+
+function isRepoUpToDate({ data }) {
+  return !!data.system_version && data.system_version === data.latest_release;
+}
+
+function repoSortKey({ url, data }) {
+  const name =
+    data.owner && data.repo_name
+      ? `${data.owner}/${data.repo_name}`.toLowerCase()
+      : url.toLowerCase();
+  return name;
+}
+
+function applyView() {
+  const q = viewState.search.toLowerCase();
+  let rows = allRepos.filter(({ url, data }) => {
+    if (viewState.filter === "outdated" && isRepoUpToDate({ data })) return false;
+    if (viewState.filter === "uptodate" && !isRepoUpToDate({ data })) return false;
+    if (!q) return true;
+    const haystack = [
+      url,
+      data.owner,
+      data.repo_name,
+      data.host_kind,
+      data.latest_release,
+      data.system_version,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+  rows.sort((a, b) => {
+    if (viewState.sort === "host") {
+      return (a.data.host_kind || "").localeCompare(b.data.host_kind || "");
+    }
+    if (viewState.sort === "status") {
+      return Number(isRepoUpToDate(a)) - Number(isRepoUpToDate(b));
+    }
+    return repoSortKey(a).localeCompare(repoSortKey(b));
+  });
+  return rows;
+}
+
+function renderEmpty() {
+  repoGrid.innerHTML = "";
+  const empty = document.createElement("article");
+  empty.className = "card repo-empty";
+  empty.innerHTML = `
+    <h4>No repositories tracked yet</h4>
+    <p class="text-light">Add one using the input above.</p>
+  `;
+  repoGrid.appendChild(empty);
+}
+
+function renderNoMatches() {
+  repoGrid.innerHTML = "";
+  const empty = document.createElement("article");
+  empty.className = "card repo-empty";
+  empty.innerHTML = `
+    <h4>No matching repositories</h4>
+    <p class="text-light">Try a different search or filter.</p>
+  `;
+  repoGrid.appendChild(empty);
+}
+
+function renderSkeletons() {
+  repoGrid.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    const card = document.createElement("article");
+    card.className = "card repo-card repo-skeleton";
+    card.setAttribute("aria-hidden", "true");
+    card.innerHTML = `
+      <div role="status" class="skeleton line" style="width: 40%"></div>
+      <div role="status" class="skeleton line"></div>
+      <div role="status" class="skeleton line" style="width: 60%"></div>
+    `;
+    repoGrid.appendChild(card);
+  }
+}
+
+function renderRepos() {
+  if (allRepos.length === 0) {
+    repoToolbar.hidden = true;
+    appStatus.hidden = true;
+    renderEmpty();
+    return;
+  }
+  repoToolbar.hidden = false;
+  appStatus.hidden = false;
+  const rows = applyView();
+  if (rows.length === 0) {
+    renderNoMatches();
+  } else {
     repoGrid.innerHTML = "";
-    Object.entries(repos).forEach(([url, data]) => {
+    rows.forEach(({ url, data }) => {
       repoGrid.appendChild(buildCard(url, data));
     });
+  }
+  updateStatus();
+}
+
+function updateStatus() {
+  const total = allRepos.length;
+  const outdated = allRepos.filter((r) => !isRepoUpToDate(r)).length;
+  appStatusCounts.textContent = `${total} repo${total === 1 ? "" : "s"} · ${outdated} outdated`;
+  appStatusRefresh.textContent = lastRefreshAt
+    ? `Last refresh: ${lastRefreshAt.toLocaleTimeString()}`
+    : "";
+}
+
+// Load all repos
+async function loadRepos({ showSkeletons = false } = {}) {
+  if (showSkeletons) renderSkeletons();
+  try {
+    const repos = await invoke("get_repos");
+    allRepos = Object.entries(repos).map(([url, data]) => ({ url, data }));
+    renderRepos();
   } catch (e) {
     ot.toast(String(e), "Failed to load repos", { variant: "danger" });
   }
 }
+
+repoSearch.addEventListener("input", () => {
+  viewState.search = repoSearch.value.trim();
+  renderRepos();
+});
+
+repoFilter.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-filter]");
+  if (!btn) return;
+  viewState.filter = btn.dataset.filter;
+  repoFilter.querySelectorAll("button[data-filter]").forEach((b) => {
+    const active = b === btn;
+    b.setAttribute("aria-pressed", active ? "true" : "false");
+    b.classList.toggle("outline", !active);
+  });
+  renderRepos();
+});
+
+repoSort.addEventListener("change", () => {
+  viewState.sort = repoSort.value;
+  renderRepos();
+});
 
 // Add repo
 addBtn.addEventListener("click", async () => {
@@ -257,15 +396,13 @@ addBtn.addEventListener("click", async () => {
   const host = extractHostUrl(url);
 
   if (!url) {
-    ot.toast("Please enter a repository URL", "Missing URL", {
-      variant: "warning",
-    });
+    setRepoUrlError("Please enter a repository URL");
+    urlInput.focus();
     return;
   }
   if (!isValidRepoUrl(url)) {
-    ot.toast("URL must be https://host/owner/repo", "Invalid URL", {
-      variant: "danger",
-    });
+    setRepoUrlError("URL must be https://host/owner/repo");
+    urlInput.focus();
     return;
   }
 
@@ -275,12 +412,19 @@ addBtn.addEventListener("click", async () => {
     await invoke("add_repo", { url, host, forge });
     ot.toast("Repository added", "Done", { variant: "success" });
     urlInput.value = "";
+    setRepoUrlError(null);
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Add repo failed", { variant: "danger" });
   } finally {
     addBtn.disabled = false;
     addBtn.removeAttribute("aria-busy");
+  }
+});
+
+urlInput.addEventListener("input", () => {
+  if (repoAddField.getAttribute("data-field") === "error") {
+    setRepoUrlError(null);
   }
 });
 
@@ -308,6 +452,7 @@ async function handleRefresh(btn, url) {
   try {
     await invoke("refresh_repo", { url });
     ot.toast("Repo refreshed", "Done", { variant: "success" });
+    lastRefreshAt = new Date();
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Refresh failed", { variant: "danger" });
@@ -334,6 +479,7 @@ refreshAllBtn.addEventListener("click", async () => {
         { variant: "warning" },
       );
     }
+    lastRefreshAt = new Date();
     await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Refresh all failed", { variant: "danger" });
@@ -347,12 +493,32 @@ refreshAllBtn.addEventListener("click", async () => {
 async function handleDelete(url) {
   try {
     await invoke("delete_repo", { url });
-    document.querySelector(`[data-url="${url}"]`)?.remove();
     ot.toast("Repository deleted", "", { variant: "success" });
+    await loadRepos();
   } catch (e) {
     ot.toast(String(e), "Delete failed", { variant: "danger" });
   }
 }
+
+// Delete confirmation dialog
+const deleteDialog = document.getElementById("delete-dialog");
+const deleteCancelBtn = document.getElementById("delete-cancel-btn");
+
+deleteCancelBtn.addEventListener("click", () => deleteDialog.close());
+
+function openDeleteDialog(url) {
+  deletingUrl = url;
+  deleteDialog.showModal();
+}
+
+deleteDialog.addEventListener("close", async () => {
+  // Capture deletingUrl immediately so a concurrent openDeleteDialog() call
+  // cannot clobber it before the await below completes (mirrors editDialog).
+  const oldUrl = deletingUrl;
+  deletingUrl = null;
+  if (deleteDialog.returnValue !== "confirm" || !oldUrl) return;
+  await handleDelete(oldUrl);
+});
 
 // Edit dialog open
 function openEditDialog(url, hostKind) {
@@ -704,4 +870,4 @@ async function initSettings() {
 }
 
 initSettings();
-loadRepos();
+loadRepos({ showSkeletons: true });
