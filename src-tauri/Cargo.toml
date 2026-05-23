@@ -1,6 +1,6 @@
 [package]
 name = "upstream-releases-tracker-lib"
-version = "3.4.3"
+version = "3.4.4"
 description = "Track releases from upstream repositories of projects"
 authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
 edition = "2024"
@@ -24,7 +24,7 @@ tauri-plugin-stronghold = "^2"
 tauri-plugin-store = "^2"
 log = "^0.4"
 argon2 = "^0.5"
-keyring = "^3"
+keyring = { version = "^3", features = ["windows-native", "apple-native", "async-secret-service", "tokio", "crypto-rust"] }
 rand = { version = "^0.8", features = [] }
 tokio = { version = "^1", features = ["sync", "rt"] }
 serde = { version = "^1.0.219", features = ["derive"] }

@@ -392,6 +392,24 @@ fn get_vault_key() -> Result<String, String> {
     }
 }
 
+/// Deletes the vault file so a fresh one can be created on next init.
+/// Called by the frontend when Stronghold.load() fails with an existing
+/// vault.hold (e.g. after upgrading from a build where the keyring mock
+/// was used and the key was never persisted to the OS credential store).
+#[tauri::command]
+fn delete_vault_file(app: tauri::AppHandle) -> Result<(), String> {
+    let vault_path = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Could not get app local data dir: {}", e))?
+        .join("vault.hold");
+    if vault_path.exists() {
+        std::fs::remove_file(&vault_path)
+            .map_err(|e| format!("Failed to delete vault file: {}", e))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, String> {
     use std::io::{BufRead, Read, Seek, SeekFrom};
@@ -532,6 +550,7 @@ pub fn run() {
             update_endpoints,
             update_api_keys,
             get_vault_key,
+            delete_vault_file,
             get_logs,
         ])
         .run(tauri::generate_context!())

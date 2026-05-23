@@ -400,7 +400,22 @@ const settingsInputs = {
 async function initVault() {
   const vaultKey = await invoke("get_vault_key");
   const vaultPath = await join(await appLocalDataDir(), VAULT_FILE);
-  const stronghold = await Stronghold.load(vaultPath, vaultKey);
+  let stronghold;
+  try {
+    stronghold = await Stronghold.load(vaultPath, vaultKey);
+  } catch {
+    // vault.hold exists but was encrypted with a different key (e.g. from a
+    // build where the OS keyring was not enabled and the key lived only in
+    // process memory). Delete the stale file and start fresh — the old data
+    // was already inaccessible.
+    await invoke("delete_vault_file");
+    stronghold = await Stronghold.load(vaultPath, vaultKey);
+    ot.toast(
+      "Your API keys were stored in an unreadable vault (from an older build) and have been cleared. Please re-enter them in Settings.",
+      "Vault reset",
+      { variant: "warning" },
+    );
+  }
   let client;
   try {
     client = await stronghold.loadClient(VAULT_CLIENT);
