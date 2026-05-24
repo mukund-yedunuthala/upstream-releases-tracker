@@ -2,6 +2,12 @@
     color-scheme: dark;
 }
 
+/* oat's :is(button,...) rule (specificity 0,1,1) beats [hidden] (0,1,0) inside the same
+   @layer base, so hidden buttons remain visible. Re-assert here, outside any layer. */
+[hidden] {
+    display: none !important;
+}
+
 main.container {
     padding-block: var(--space-6) var(--space-10);
 }
