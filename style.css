@@ -1,44 +1,32 @@
 :root {
-    --xs: 0.25rem;
-    --sm: 0.5rem;
-    --md: 1rem;
-    --lg: 1.5rem;
-    --xl: 2rem;
-
-    --radius-sm: 0.5rem;
-    --radius: 0.75rem;
-    --radius-lg: 1rem;
-
-    --font-title: clamp(1.125rem, 3vw, 1.5rem);
-    --font-body: clamp(0.875rem, 2vw, 1rem);
-    --font-muted: 0.8rem;
+    color-scheme: dark;
 }
 
-.app-container {
-    width: 100%;
-    padding: var(--lg) var(--xl);
-    min-height: 100vh;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
+/* oat's :is(button,...) rule (specificity 0,1,1) beats [hidden] (0,1,0) inside the same
+   @layer base, so hidden buttons remain visible. Re-assert here, outside any layer. */
+[hidden] {
+    display: none !important;
+}
+
+main.container {
+    padding-block: var(--space-6) var(--space-10);
 }
 
 #topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--md);
-    margin-bottom: var(--xl);
-    padding-bottom: var(--md);
-    border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    gap: var(--space-4);
+    margin-bottom: var(--space-8);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
 }
 
 #topbar h2 {
     margin: 0;
-    font-size: var(--font-title);
-    font-weight: 600;
+    font-size: var(--text-3);
+    font-weight: var(--font-semibold);
     letter-spacing: -0.02em;
     white-space: nowrap;
 }
@@ -46,39 +34,35 @@
 #topbar-actions {
     display: flex;
     align-items: center;
-    gap: var(--sm);
+    gap: var(--space-2);
     flex: 1;
     justify-content: flex-end;
     min-width: 0;
 }
 
-#topbar-actions .group {
+#repo-add-field {
     flex: 1;
     max-width: 640px;
-    margin: 0;
-    display: flex;
-    align-items: stretch;
-}
-
-#topbar-actions .group select {
-    flex-shrink: 0;
-    border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-    border-radius: var(--radius) 0 0 var(--radius);
-    padding: 0 var(--sm);
-    font-size: var(--font-body);
-    cursor: pointer;
-    max-width: 120px;
-}
-
-#topbar-actions .group input {
-    flex: 1;
     min-width: 0;
-    border-radius: 0;
+    position: relative;
+    margin: 0;
 }
 
-#topbar-actions .group button {
+#repo-add-field .group {
+    margin: 0;
+    width: 100%;
+}
+
+#repo-add-field .group select {
+    max-width: 120px;
     flex-shrink: 0;
-    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+#repo-add-field .error {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    left: 0;
+    margin: 0;
 }
 
 #refresh-all-btn {
@@ -86,138 +70,257 @@
     flex-shrink: 0;
 }
 
+#repo-toolbar {
+    margin: 0 0 var(--space-4);
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+#repo-toolbar > * {
+    margin: 0;
+}
+
+#repo-toolbar #repo-search {
+    flex: 1;
+    min-width: 12rem;
+}
+
+#repo-toolbar #repo-sort {
+    flex-shrink: 0;
+    max-width: 14rem;
+}
+
+#repo-toolbar #repo-filter {
+    flex-shrink: 0;
+}
+
+#repo-toolbar #repo-filter li {
+    margin: 0;
+}
+
 #repo-grid {
     flex: 1;
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--lg);
+    gap: var(--space-6);
+}
+
+#repo-grid .repo-card.repo-skeleton {
+    pointer-events: none;
+}
+
+#repo-grid .repo-card.repo-skeleton .skeleton {
+    height: 1em;
+}
+
+.repo-empty {
+    text-align: center;
+    padding: var(--space-8);
+}
+
+#app-status {
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
 }
 
 /* ── Repo card ── */
 .repo-card {
     width: 100%;
-    border-radius: var(--radius-lg);
-    padding: var(--lg) var(--xl);
+    border-radius: var(--radius-large);
+    padding: var(--space-6) var(--space-8);
     display: flex;
     flex-direction: column;
-    gap: var(--md);
+    gap: var(--space-4);
     box-sizing: border-box;
     contain: layout;
     transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
 }
 
 .repo-card:hover {
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-large);
 }
 
 .repo-card-title {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--sm);
+    gap: var(--space-2);
     flex-wrap: wrap;
 }
 
 .repo-card-title strong {
-    font-size: var(--font-title);
-    font-weight: 600;
+    font-size: var(--text-3);
+    font-weight: var(--font-semibold);
     line-height: 1.25;
 }
 
 .repo-card-subtitle {
     display: flex;
     align-items: center;
-    gap: var(--sm);
+    gap: var(--space-2);
     flex-wrap: wrap;
 }
 
-.host-badge {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 0.1rem var(--sm);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, currentColor 10%, transparent);
-    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-    white-space: nowrap;
-    opacity: 0.85;
-    flex-shrink: 0;
-}
-
 .repo-url {
-    font-size: var(--font-muted);
-    opacity: 0.65;
+    font-size: var(--text-8);
+    color: var(--muted-foreground);
     word-break: break-all;
-    color: inherit;
     text-decoration: none;
 }
 
 .repo-url:hover {
-    opacity: 0.85;
+    color: var(--foreground);
     text-decoration: underline;
 }
 
 .repo-card-meta {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto;
     align-items: center;
-    justify-content: space-between;
-    padding: var(--xs) 0;
-    font-size: var(--font-body);
-    opacity: 0.75;
-    border-top: 1px solid color-mix(in srgb, currentColor 6%, transparent);
-    border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+    row-gap: var(--space-2);
+    column-gap: var(--space-4);
+    padding: var(--space-2) 0;
+    margin: 0;
+    font-size: var(--text-7);
+    color: var(--muted-foreground);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
 }
 
-.repo-card-meta + .repo-card-meta {
-    border-top: none;
-    padding-top: 0;
+.repo-card-meta dd {
+    margin: 0;
+    justify-self: end;
 }
 
 .repo-card-meta code {
     font-size: 0.875rem;
-    font-weight: 500;
-    background: color-mix(in srgb, currentColor 8%, transparent);
-    padding: var(--xs) var(--sm);
-    border-radius: var(--radius-sm);
+    font-weight: var(--font-medium);
+    background: var(--faint);
+    color: var(--foreground);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-small);
+}
+
+/* ── Release notes expand/collapse ── */
+.repo-card-notes {
+    font-size: var(--text-8);
+}
+
+.repo-card-notes summary {
+    padding: var(--space-2) var(--space-4);
+    color: var(--muted-foreground);
+}
+
+.repo-card-notes summary:hover {
+    color: var(--foreground);
+}
+
+.repo-card-notes[data-empty] summary {
+    color: var(--faint-foreground);
+    cursor: default;
+    pointer-events: none;
+}
+
+.repo-card-notes[data-empty] summary::after {
+    display: none;
+}
+
+.repo-card-notes pre {
+    margin: 0;
+    max-height: 14rem;
+    overflow-y: auto;
+    padding: var(--space-2) var(--space-4);
+    border-radius: 0;
+    background: var(--faint);
+    font-size: 0.8rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.repo-card-notes pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* ── Copy-to-clipboard ── */
+.repo-card-meta code[data-copy] {
+    cursor: pointer;
+    position: relative;
+    transition: background 0.1s;
+}
+
+.repo-card-meta code[data-copy]:hover {
+    background: var(--muted);
+}
+
+.repo-card-meta code[data-copy].copied::after {
+    content: "Copied!";
+    position: absolute;
+    top: -1.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--foreground);
+    color: var(--background);
+    border-radius: var(--radius-small);
+    padding: 0.15rem 0.45rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
 }
 
 /* ── Card actions ── */
 .repo-card-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--xs);
+    gap: var(--space-1);
     align-items: center;
     margin-top: auto;
-    padding-top: var(--sm);
-    border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
 }
 
 .repo-card-actions button {
     font-size: 0.875rem;
-    padding: var(--xs) var(--sm);
+    padding: var(--space-1) var(--space-2);
     min-height: 2rem;
 }
 
-/* ── Inline delete confirm ── */
-.delete-popover {
-    margin-top: var(--xs);
-    border-radius: var(--radius);
-    padding: var(--md);
-    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-}
-
-.delete-popover footer {
+/* ── Edit & delete dialog internals ── */
+#delete-dialog form {
     display: flex;
-    gap: var(--sm);
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: min(420px, 90vw);
 }
 
-/* ── Edit dialog internals ── */
+#delete-dialog header {
+    margin-bottom: 0;
+}
+
+#delete-dialog header p {
+    margin: var(--space-1) 0 0;
+}
+
+#delete-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
+}
+
 #edit-dialog form {
     display: flex;
     flex-direction: column;
-    gap: var(--md);
+    gap: var(--space-4);
     width: min(420px, 90vw);
 }
 
@@ -228,27 +331,27 @@
 #edit-dialog footer {
     display: flex;
     justify-content: flex-end;
-    gap: var(--sm);
-    padding-top: var(--sm);
-    border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
 }
 
 /* ── Settings dialog ── */
 #settings-dialog {
-    width: min(560px, 92vw);
+    width: min(720px, 92vw);
 }
 
 #settings-dialog form {
     display: flex;
     flex-direction: column;
-    gap: var(--md);
+    gap: var(--space-4);
     max-height: 80vh;
 }
 
 #settings-dialog header {
     display: flex;
     flex-direction: column;
-    gap: var(--sm);
+    gap: var(--space-2);
     margin-bottom: 0;
 }
 
@@ -256,63 +359,60 @@
     margin: 0;
 }
 
-#settings-tabs {
+#settings-sections {
+    padding: 0 var(--space-6);
+    overflow-y: auto;
     display: flex;
-    gap: var(--xs);
-    flex-wrap: wrap;
-    border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-    padding-bottom: var(--xs);
-}
-
-#settings-tabs .tab-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    padding: var(--xs) var(--md);
-    cursor: pointer;
-    font-size: var(--font-body);
-    color: inherit;
-    opacity: 0.65;
-}
-
-#settings-tabs .tab-btn:hover {
-    opacity: 1;
-}
-
-#settings-tabs .tab-btn.active {
-    opacity: 1;
-    border-color: color-mix(in srgb, currentColor 12%, transparent);
-    border-bottom-color: transparent;
-    background: color-mix(in srgb, currentColor 6%, transparent);
+    flex-direction: column;
+    gap: var(--space-6);
 }
 
 .settings-section {
     display: flex;
     flex-direction: column;
-    gap: var(--sm);
-    overflow-y: auto;
-    min-height: 8rem;
+    gap: var(--space-2);
 }
 
-.settings-section[hidden] {
-    display: none;
+.settings-section + .settings-section {
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border);
+}
+
+.settings-section h4 {
+    margin: 0 0 var(--space-2);
+}
+
+.settings-about {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: var(--space-4);
+    row-gap: var(--space-2);
+    margin: 0 0 var(--space-4);
+}
+
+.settings-about dt {
+    color: var(--muted-foreground);
+}
+
+.settings-about dd {
+    margin: 0;
 }
 
 .settings-help {
-    font-size: var(--font-muted);
-    opacity: 0.75;
+    font-size: var(--text-8);
+    color: var(--muted-foreground);
     margin: 0;
 }
 
 .muted {
-    opacity: 0.65;
-    font-size: var(--font-muted);
+    color: var(--muted-foreground);
+    font-size: var(--text-8);
 }
 
 .logs-toolbar {
     display: flex;
     align-items: center;
-    gap: var(--sm);
+    gap: var(--space-2);
 }
 
 #settings-logs-output {
@@ -320,9 +420,9 @@
     min-height: 12rem;
     max-height: 24rem;
     overflow: auto;
-    padding: var(--sm);
-    border-radius: var(--radius-sm);
-    background: color-mix(in srgb, currentColor 8%, transparent);
+    padding: var(--space-2);
+    border-radius: var(--radius-small);
+    background: var(--faint);
     font-size: 0.75rem;
     white-space: pre-wrap;
     word-break: break-word;
@@ -332,21 +432,21 @@
 #settings-dialog footer {
     display: flex;
     justify-content: flex-end;
-    gap: var(--sm);
-    padding-top: var(--sm);
-    border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
 }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-    .app-container {
-        padding: var(--md) var(--sm);
+    main.container {
+        padding-block: var(--space-4);
     }
 
     #topbar {
         flex-direction: column;
         align-items: stretch;
-        gap: var(--md);
+        gap: var(--space-4);
     }
 
     #topbar-actions {
@@ -355,13 +455,12 @@
         justify-content: stretch;
     }
 
-    #topbar-actions .group {
+    #repo-add-field {
         max-width: 100%;
     }
 
-    #topbar-actions .group select {
+    #repo-add-field .group select {
         max-width: 100px;
-        border-radius: var(--radius) 0 0 var(--radius);
     }
 
     #refresh-all-btn {
@@ -369,12 +468,12 @@
     }
 
     .repo-card {
-        padding: var(--md) var(--lg);
+        padding: var(--space-4) var(--space-6);
     }
 
     .repo-card-title {
         flex-direction: column;
         align-items: flex-start;
-        gap: var(--xs);
+        gap: var(--space-1);
     }
 }

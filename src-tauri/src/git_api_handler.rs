@@ -231,6 +231,14 @@ async fn forgejo_api_call(
     })
 }
 
+fn extract_release_notes(json: &serde_json::Value, host_kind: &ForgeKind) -> String {
+    let key = match host_kind {
+        ForgeKind::GitLab => "description",
+        _ => "body",
+    };
+    json[key].as_str().unwrap_or("").to_string()
+}
+
 impl GitHandler {
     pub async fn post_request(
         &self,
@@ -245,6 +253,7 @@ impl GitHandler {
             .as_str()
             .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
             .to_string();
+        let release_notes = extract_release_notes(&json, &host_kind);
 
         Ok(RepoData {
             owner,
@@ -253,6 +262,7 @@ impl GitHandler {
             host_kind,
             latest_release,
             system_version: String::new(),
+            release_notes,
         })
     }
 
@@ -273,6 +283,7 @@ impl GitHandler {
             .as_str()
             .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
             .to_string();
+        let release_notes = extract_release_notes(&json, &old_repo.host_kind);
 
         Ok(RepoData {
             owner: old_repo.owner.clone(),
@@ -281,6 +292,7 @@ impl GitHandler {
             host_kind: old_repo.host_kind.clone(),
             latest_release,
             system_version: old_repo.system_version.clone(),
+            release_notes,
         })
     }
 }

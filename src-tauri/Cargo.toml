@@ -1,6 +1,6 @@
 [package]
 name = "upstream-releases-tracker-lib"
-version = "3.4.4"
+version = "3.5.0"
 description = "Track releases from upstream repositories of projects"
 authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
 edition = "2024"
