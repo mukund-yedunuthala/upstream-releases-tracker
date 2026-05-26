@@ -64,8 +64,17 @@ pub fn upd_repo_status(
     write_repos(datafilepath, &repos)
 }
 
-/// Atomically replace `old_url` with `new_url`, preserving all data from `new_data`
-/// (caller is responsible for transferring fields like system_version before calling).
+/// Replace `old_url` with `new_url`, preserving all data from `new_data`.
+/// The caller is responsible for transferring fields like `system_version` before calling.
+///
+/// # Atomicity
+/// This function performs a single read-modify-write cycle guarded by the
+/// caller's `tokio::sync::Mutex` in `lib.rs`. The write itself goes through
+/// `json_handler::write_json_file`, which uses a rename-over-temp pattern —
+/// so the file on disk is either the old state or the new state, never a
+/// partial mix. However, this is **not** crash-atomic at the OS level (the
+/// rename can be lost on power failure before the journal flushes). For a
+/// single-user desktop app this trade-off is acceptable.
 pub fn edit_repo(
     datafilepath: &str,
     old_url: &str,

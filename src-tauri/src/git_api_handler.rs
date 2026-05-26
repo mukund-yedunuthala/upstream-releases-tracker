@@ -249,6 +249,14 @@ async fn forgejo_api_call(
 ) -> Result<serde_json::Value, String> {
     // Reject hosts not on the user-managed allowlist to prevent token exfiltration.
     // To add a new Forgejo host, add its hostname to forgejo_trusted_hosts in config.json.
+    //
+    // IDN note (S5): comparison is ASCII-case-insensitive only. Hosts stored as
+    // Unicode (e.g. "mygïtea.example") and their punycode equivalents
+    // (e.g. "xn--mygïtea-n2a.example") are treated as different entries.
+    // In practice all Forgejo/Gitea instances use ASCII hostnames, and
+    // `validate_forgejo_host` already rejects non-ASCII input, so this is not
+    // exploitable — but it means a user who manually edits the config with
+    // a Unicode host must use the exact same form in the URL.
     if !config.forgejo_token.is_empty()
         && !config
             .forgejo_trusted_hosts

@@ -622,7 +622,7 @@ async function initVault() {
     // build where the OS keyring was not enabled and the key lived only in
     // process memory). Delete the stale file and start fresh — the old data
     // was already inaccessible.
-    await invoke("delete_vault_file");
+    await invoke("delete_vault_file", { confirm: "yes" });
     stronghold = await Stronghold.load(vaultPath, vaultKey);
     ot.toast(
       "Your API keys were stored in an unreadable vault (from an older build) and have been cleared. Please re-enter them in Settings.",
@@ -764,21 +764,45 @@ settingsBtn.addEventListener("click", () => {
   refreshLogs();
 });
 
-async function refreshLogs() {
+// Byte offset of the last byte read from the log file. Persisted across
+// refreshLogs() calls within the session for incremental reads (F9).
+// Reset to undefined when the user manually triggers a full refresh.
+let logNextOffset = undefined;
+
+async function refreshLogs(incremental = false) {
   settingsLogsStatus.textContent = "Loading…";
   try {
-    const lines = await invoke("get_logs", { limit: 200 });
-    settingsLogsOutput.textContent = lines.length
-      ? lines.join("\n")
-      : "(no log entries yet)";
-    settingsLogsStatus.textContent = `${lines.length} line(s)`;
+    const afterBytes = incremental ? logNextOffset : undefined;
+    const chunk = await invoke("get_logs", { limit: 200, afterBytes });
+    if (incremental && chunk.lines.length === 0) {
+      // No new data — leave the display unchanged.
+      settingsLogsStatus.textContent = settingsLogsOutput.textContent
+        ? settingsLogsStatus.textContent.replace("Loading…", "").trim() || `${settingsLogsOutput.textContent.split("\n").length} line(s) (no new entries)`
+        : "(no log entries yet)";
+    } else {
+      if (incremental && settingsLogsOutput.textContent && settingsLogsOutput.textContent !== "(no log entries yet)") {
+        // Append new lines to the existing display.
+        settingsLogsOutput.textContent += "\n" + chunk.lines.join("\n");
+      } else {
+        settingsLogsOutput.textContent = chunk.lines.length
+          ? chunk.lines.join("\n")
+          : "(no log entries yet)";
+      }
+      settingsLogsStatus.textContent = `${settingsLogsOutput.textContent.split("\n").filter(l => l !== "(no log entries yet)").length} line(s)`;
+    }
+    logNextOffset = chunk.next_offset;
   } catch (e) {
     settingsLogsOutput.textContent = "";
     settingsLogsStatus.textContent = `Error: ${e}`;
+    logNextOffset = undefined;
   }
 }
 
-settingsLogsRefresh.addEventListener("click", refreshLogs);
+settingsLogsRefresh.addEventListener("click", () => {
+  // Manual refresh always does a full re-read (resets incremental state).
+  logNextOffset = undefined;
+  refreshLogs(false);
+});
 
 function parseHosts(text) {
   return text

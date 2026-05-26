@@ -80,3 +80,10 @@ GitLab is implemented as of 3.4.0. Subgroup URL support (≥3 path segments) was
 ### URL validation
 
 `isValidRepoUrl` in `app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with at least two path segments (`host/owner/repo`). GitLab subgroup URLs with additional segments (`host/group/subgroup/project`) are valid; `parse_url` joins all segments except the last as the owner.
+
+### Security notes
+
+- **CSP `'unsafe-inline'` in `style-src`** (S6): required by the `oat` UI library which injects inline styles for theming. Cannot be removed without upstream support for nonce-based styles. Tauri's schema validator does not allow comments in `tauri.conf.json`, so the rationale lives here.
+- **Vault key in JS** (S3): `get_vault_key` returns the 32-byte hex key to JS so Stronghold can call `load()`. The key briefly lives in the JS heap; the derived Argon2id vault key never leaves Rust. See the `get_vault_key` docstring for the full threat-model note.
+- **`delete_vault_file` requires `confirm: "yes"`** (S4): prevents accidental invocation since losing the vault loses all stored API keys.
+- **Forgejo trusted-host comparison** (S5): ASCII-case-insensitive only — Unicode hostnames and their punycode equivalents are treated as different entries. `validate_forgejo_host` already rejects non-ASCII input so this is not exploitable in practice.

@@ -402,6 +402,18 @@ async fn update_api_keys(
 /// The string is passed to `Stronghold.load()` in JS, where the stronghold
 /// plugin delivers it to the Argon2id closure as a `&str`. If the keyring is
 /// unavailable the command returns an error so the frontend can surface it.
+///
+/// # Security note — vault key in JS process memory
+///
+/// The Stronghold plugin requires the raw key material to be passed from Rust
+/// to JavaScript at each startup (it is the password argument to `load()`).
+/// This means the 32-byte hex string briefly lives in the JS heap and in the
+/// IPC channel. Within Tauri's threat model this is acceptable: the webview
+/// renderer and the Rust core share the same trust boundary on a single-user
+/// desktop, and the value is never persisted by JS (no localStorage, no
+/// indexedDB). The real secret — the Argon2id-derived vault key — never
+/// leaves the Stronghold plugin's Rust code. Users who need to reason about
+/// this should consult the Stronghold security model documentation.
 #[tauri::command]
 fn get_vault_key() -> Result<String, String> {
     use rand::RngCore;
@@ -434,8 +446,16 @@ fn get_vault_key() -> Result<String, String> {
 /// Called by the frontend when Stronghold.load() fails with an existing
 /// vault.hold (e.g. after upgrading from a build where the keyring mock
 /// was used and the key was never persisted to the OS credential store).
+///
+/// Requires `confirm == "yes"` to prevent accidental invocation — this
+/// is a destructive operation (all stored API keys are lost).
 #[tauri::command]
-fn delete_vault_file(app: tauri::AppHandle) -> Result<(), String> {
+fn delete_vault_file(app: tauri::AppHandle, confirm: String) -> Result<(), String> {
+    if confirm != "yes" {
+        return Err(
+            "delete_vault_file requires confirm=\"yes\" to prevent accidental data loss".to_string(),
+        );
+    }
     let vault_path = app
         .path()
         .app_local_data_dir()
@@ -448,8 +468,34 @@ fn delete_vault_file(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Returned by `get_logs`. Contains the new log lines and the byte offset at
+/// the end of the last read so the caller can pass it back as `after_bytes` on
+/// the next call to receive only new entries (F9 incremental reads).
+#[derive(Serialize)]
+struct LogChunk {
+    lines: Vec<String>,
+    /// Byte offset after the last byte that was read.  Pass this back as
+    /// `after_bytes` on the next call to receive only new log entries.
+    next_offset: u64,
+}
+
+/// Returns log lines from the most-recently-modified `.log` file.
+///
+/// - `limit`: maximum number of lines to return (capped at 1000).
+/// - `after_bytes`: if `Some(n)`, only read from byte offset `n` onwards
+///   (incremental mode — pass the `next_offset` from the previous response).
+///   If `None`, returns the tail window of the full file.
+///
+/// The returned `next_offset` should be persisted by the caller between
+/// invocations.  If the log file has been rotated (new `next_offset` would be
+/// smaller than the supplied `after_bytes`), the command automatically falls
+/// back to a full read of the new file.
 #[tauri::command]
-async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, String> {
+async fn get_logs(
+    app: tauri::AppHandle,
+    limit: usize,
+    after_bytes: Option<u64>,
+) -> Result<LogChunk, String> {
     use std::io::{BufRead, Read, Seek, SeekFrom};
 
     const MAX_READ_BYTES: u64 = 262_144; // 256 KiB tail window
@@ -462,7 +508,7 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
         .map_err(|e| format!("Could not get log dir: {}", e))?;
 
     if !log_dir.exists() {
-        return Ok(vec![]);
+        return Ok(LogChunk { lines: vec![], next_offset: 0 });
     }
 
     // Pick the most recently modified .log file in the log dir.
@@ -486,7 +532,7 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
     }
 
     let Some((path, _)) = latest else {
-        return Ok(vec![]);
+        return Ok(LogChunk { lines: vec![], next_offset: 0 });
     };
 
     let file_len = std::fs::metadata(&path)
@@ -496,7 +542,32 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
     let mut file = std::fs::File::open(&path)
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 
-    // For large files seek to the tail window; for small files read from start.
+    // Incremental mode: if the caller supplied a byte offset and the file has
+    // grown since then, seek to that offset and return only new lines.
+    // If the offset is >= file_len the file hasn't grown; return nothing.
+    // If the offset > file_len the file was rotated; fall through to full read.
+    if let Some(offset) = after_bytes {
+        if offset < file_len {
+            file.seek(SeekFrom::Start(offset))
+                .map_err(|e| format!("Failed to seek log file: {}", e))?;
+            let mut buf = String::new();
+            std::io::BufReader::new(&mut file)
+                .read_to_string(&mut buf)
+                .map_err(|e| format!("Failed to read log file: {}", e))?;
+            let all_lines: Vec<&str> = buf.lines().collect();
+            let start = all_lines.len().saturating_sub(limit);
+            return Ok(LogChunk {
+                lines: all_lines[start..].iter().map(|s| s.to_string()).collect(),
+                next_offset: file_len,
+            });
+        } else if offset == file_len {
+            // No new data.
+            return Ok(LogChunk { lines: vec![], next_offset: file_len });
+        }
+        // offset > file_len → rotation detected, fall through to full read.
+    }
+
+    // Full read: tail the last MAX_READ_BYTES of the file.
     if file_len > MAX_READ_BYTES {
         file.seek(SeekFrom::End(-(MAX_READ_BYTES as i64)))
             .map_err(|e| format!("Failed to seek log file: {}", e))?;
@@ -512,7 +583,10 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
             .map_err(|e| format!("Failed to read log file: {}", e))?;
         let lines: Vec<&str> = buf.lines().collect();
         let start = lines.len().saturating_sub(limit);
-        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+        Ok(LogChunk {
+            lines: lines[start..].iter().map(|s| s.to_string()).collect(),
+            next_offset: file_len,
+        })
     } else {
         let mut buf = String::new();
         std::io::BufReader::new(file)
@@ -520,7 +594,10 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
             .map_err(|e| format!("Failed to read log file: {}", e))?;
         let lines: Vec<&str> = buf.lines().collect();
         let start = lines.len().saturating_sub(limit);
-        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+        Ok(LogChunk {
+            lines: lines[start..].iter().map(|s| s.to_string()).collect(),
+            next_offset: file_len,
+        })
     }
 }
 
@@ -554,6 +631,42 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .max_file_size(2_097_152)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                // Emit newline-delimited JSON so logs are machine-parseable (O3).
+                // Each entry: {"ts":<unix_ms>,"level":"INFO","target":"...","msg":"..."}
+                // ts is milliseconds since the Unix epoch (UTC).
+                .format(|out, message, record| {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    // Escape the message and target so they are valid JSON strings.
+                    // We only escape the characters that are illegal inside a JSON
+                    // string: double-quote, backslash, and ASCII control characters.
+                    let escape = |s: &str| -> String {
+                        let mut out = String::with_capacity(s.len() + 2);
+                        for c in s.chars() {
+                            match c {
+                                '"' => out.push_str("\\\""),
+                                '\\' => out.push_str("\\\\"),
+                                '\n' => out.push_str("\\n"),
+                                '\r' => out.push_str("\\r"),
+                                '\t' => out.push_str("\\t"),
+                                c if (c as u32) < 0x20 => {
+                                    out.push_str(&format!("\\u{:04x}", c as u32));
+                                }
+                                c => out.push(c),
+                            }
+                        }
+                        out
+                    };
+                    out.finish(format_args!(
+                        "{{\"ts\":{},\"level\":\"{}\",\"target\":\"{}\",\"msg\":\"{}\"}}",
+                        ts,
+                        record.level(),
+                        escape(record.target()),
+                        escape(&message.to_string()),
+                    ))
+                })
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
