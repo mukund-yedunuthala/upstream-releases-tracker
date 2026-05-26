@@ -67,7 +67,7 @@
                 </select>
             </div>
             <section id="repo-grid"></section>
-            <footer id="app-status" class="hstack text-light" hidden>
+            <footer id="app-status" class="hstack text-light" aria-live="polite" hidden>
                 <small id="app-status-counts"></small>
                 <small id="app-status-refresh"></small>
             </footer>
@@ -132,7 +132,7 @@
                     >
                         Cancel
                     </button>
-                    <button value="save" id="edit-save-btn">Save</button>
+                    <button type="submit" value="save" id="edit-save-btn">Save</button>
                 </footer>
             </form>
         </dialog>

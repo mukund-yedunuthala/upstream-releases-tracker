@@ -82,6 +82,18 @@ const editCancelBtn = document.getElementById("edit-cancel-btn");
 editCancelBtn.addEventListener("click", () => editDialog.close());
 
 // Delegated handler for all card action buttons — one listener for all cards.
+repoGrid.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const copyEl = e.target.closest("[data-copy]");
+  if (copyEl && copyEl.textContent && copyEl.textContent !== "—") {
+    e.preventDefault();
+    navigator.clipboard.writeText(copyEl.textContent).then(() => {
+      copyEl.classList.add("copied");
+      setTimeout(() => copyEl.classList.remove("copied"), 1500);
+    });
+  }
+});
+
 repoGrid.addEventListener("click", (e) => {
   const copyEl = e.target.closest("[data-copy]");
   if (copyEl && copyEl.textContent && copyEl.textContent !== "—") {
@@ -173,9 +185,9 @@ function buildCard(url, data) {
     </header>
     <dl class="repo-card-meta">
       <dt>Latest release</dt>
-      <dd><code class="js-card-latest" data-copy data-tooltip="Click to copy"></code></dd>
+      <dd><code class="js-card-latest" data-copy data-tooltip="Click to copy" tabindex="0" role="button"></code></dd>
       <dt>Installed version</dt>
-      <dd><code class="js-card-system" data-copy data-tooltip="Click to copy"></code></dd>
+      <dd><code class="js-card-system" data-copy data-tooltip="Click to copy" tabindex="0" role="button"></code></dd>
     </dl>
     <details class="repo-card-notes">
       <summary>Release notes</summary>
@@ -393,7 +405,6 @@ repoSort.addEventListener("change", () => {
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
   const forge = hostSelect.value;
-  const host = extractHostUrl(url);
 
   if (!url) {
     setRepoUrlError("Please enter a repository URL");
@@ -409,7 +420,7 @@ addBtn.addEventListener("click", async () => {
   addBtn.disabled = true;
   addBtn.setAttribute("aria-busy", "true");
   try {
-    await invoke("add_repo", { url, host, forge });
+    await invoke("add_repo", { url, forge });
     ot.toast("Repository added", "Done", { variant: "success" });
     urlInput.value = "";
     setRepoUrlError(null);
@@ -428,14 +439,6 @@ urlInput.addEventListener("input", () => {
   }
 });
 
-// Extract host URL from a given URL
-function extractHostUrl(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-}
 
 // Enter key on input
 urlInput.addEventListener("keydown", (ev) => {
@@ -551,10 +554,8 @@ editDialog.addEventListener("close", async () => {
     return;
   }
 
-  const host_url = extractHostUrl(newUrl);
-
   try {
-    await invoke("edit_repo", { oldUrl, newUrl, host: host_url, forge: newHostKind });
+    await invoke("edit_repo", { oldUrl, newUrl, forge: newHostKind });
     ot.toast("Repository updated", "Saved", { variant: "success" });
     await loadRepos();
   } catch (e) {
@@ -563,10 +564,17 @@ editDialog.addEventListener("close", async () => {
 });
 
 // Mirrors parse_url in git_api_handler.rs — must stay in sync with Rust validation.
-// Accepts 2+ path segments so GitLab subgroup URLs work
+// Accepts 2+ non-empty path segments so GitLab subgroup URLs work
 // (e.g. https://gitlab.com/group/subgroup/project).
 function isValidRepoUrl(url) {
-  return /^https:\/\/[a-zA-Z0-9._:-]+(\/[a-zA-Z0-9._-]+){2,}\/?$/.test(url);
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return segments.length >= 2;
+  } catch {
+    return false;
+  }
 }
 
 // ── Settings dialog ────────────────────────────────────────────────────────
@@ -594,7 +602,22 @@ async function initVault() {
   let stronghold;
   try {
     stronghold = await Stronghold.load(vaultPath, vaultKey);
-  } catch {
+  } catch (loadErr) {
+    // Only delete and recreate the vault if the error looks like a key
+    // mismatch or decryption failure (i.e. the vault was created with a
+    // different key — e.g. from a build before the OS keyring was enabled).
+    // For any other error (permission denied, disk full, etc.) rethrow so
+    // the problem is visible rather than silently destroying the vault.
+    const errMsg = String(loadErr).toLowerCase();
+    const isDecryptionFailure =
+      errMsg.includes("decrypt") ||
+      errMsg.includes("cipher") ||
+      errMsg.includes("mac") ||
+      errMsg.includes("aead") ||
+      errMsg.includes("stronghold");
+    if (!isDecryptionFailure) {
+      throw loadErr;
+    }
     // vault.hold exists but was encrypted with a different key (e.g. from a
     // build where the OS keyring was not enabled and the key lived only in
     // process memory). Delete the stale file and start fresh — the old data
