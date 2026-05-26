@@ -35,6 +35,24 @@ fn datafile_path_string() -> Result<String, String> {
         .map(|s| s.to_string())?)
 }
 
+/// Write a refreshed `RepoData` back into the on-disk store.
+///
+/// Reads the current file, checks the repo still exists (TOCTOU guard),
+/// inserts the updated data, and writes atomically. Returns an error if the
+/// repo was deleted while its HTTP call was in flight.
+fn merge_refresh_result(
+    path: &str,
+    url: &str,
+    new_data: RepoData,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repos = app_content_handler::read_repos(path)?;
+    if !repos.contains_key(url) {
+        return Err(format!("Repo '{}' was removed during refresh", url).into());
+    }
+    repos.insert(url.to_string(), new_data);
+    app_content_handler::write_repos(path, &repos)
+}
+
 // API key fields are runtime-only — they live in Stronghold on disk and in
 // the in-memory Config when populated by the frontend. This ensures we never
 // write them back to config.json when persisting endpoint changes.
@@ -51,8 +69,10 @@ async fn get_repos(
     state: tauri::State<'_, AppState>,
 ) -> Result<BTreeMap<String, RepoData>, String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::read_repos(&state.path)
-        .map_err(|e| format!("Failed to read repos: {}", e))
+    app_content_handler::read_repos(&state.path).map_err(|e| {
+        log::error!("get_repos failed: {}", e);
+        format!("Failed to read repos: {}", e)
+    })
 }
 
 #[tauri::command]
@@ -61,8 +81,10 @@ async fn delete_repo(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::del_repo(&state.path, &url)
-        .map_err(|e| format!("Failed to delete repo {}: {}", url, e))
+    app_content_handler::del_repo(&state.path, &url).map_err(|e| {
+        log::error!("delete_repo failed for {}: {}", url, e);
+        format!("Failed to delete repo {}: {}", url, e)
+    })
 }
 
 #[tauri::command]
@@ -86,16 +108,17 @@ async fn refresh_repo(
     let result = GitHandler {}
         .refresh_repo(&config_snapshot, &repo)
         .await
-        .map_err(|e| format!("Failed to refresh repo: {}", e))?;
+        .map_err(|e| {
+            log::error!("refresh_repo HTTP failed for {}: {}", url, e);
+            format!("Failed to refresh repo: {}", e)
+        })?;
 
-    // 3. Write back under lock.
+    // 3. Write back under lock — but only if the repo wasn't deleted while we
+    //    were waiting for the HTTP response (guards against TOCTOU with delete).
     {
         let _guard = state.lock.lock().await;
-        let mut all_repos = app_content_handler::read_repos(&state.path)
-            .map_err(|e| format!("Failed to read repos for write: {}", e))?;
-        all_repos.insert(url, result);
-        app_content_handler::write_repos(&state.path, &all_repos)
-            .map_err(|e| format!("Failed to write repos: {}", e))?;
+        merge_refresh_result(&state.path, &url, result)
+            .map_err(|e| format!("Failed to write refreshed repo: {}", e))?;
     }
 
     Ok(())
@@ -104,21 +127,25 @@ async fn refresh_repo(
 #[tauri::command]
 async fn add_repo(
     url: String,
-    host: String,
     forge: ForgeKind,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     // HTTP call first, outside the data lock.
     let config_snapshot = state.config.lock().await.clone();
     let new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, url.clone(), host, forge)
+        .post_request(&config_snapshot, url.clone(), forge)
         .await
-        .map_err(|e| format!("Error adding repository: {}", e))?;
+        .map_err(|e| {
+            log::error!("add_repo HTTP failed for {}: {}", url, e);
+            format!("Error adding repository: {}", e)
+        })?;
 
     // Write under the lock.
     let _guard = state.lock.lock().await;
-    app_content_handler::add_repo(&state.path, url, new_repo_data)
-        .map_err(|e| format!("Failed to persist new repo: {}", e))?;
+    app_content_handler::add_repo(&state.path, url, new_repo_data).map_err(|e| {
+        log::error!("add_repo persist failed: {}", e);
+        format!("Failed to persist new repo: {}", e)
+    })?;
 
     Ok(())
 }
@@ -127,7 +154,6 @@ async fn add_repo(
 async fn edit_repo(
     old_url: String,
     new_url: String,
-    host: String,
     forge: ForgeKind,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
@@ -145,17 +171,22 @@ async fn edit_repo(
     // 2. HTTP call for the new URL — no lock held.
     let config_snapshot = state.config.lock().await.clone();
     let mut new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, new_url.clone(), host, forge)
+        .post_request(&config_snapshot, new_url.clone(), forge)
         .await
-        .map_err(|e| format!("Error fetching new repo data: {}", e))?;
+        .map_err(|e| {
+            log::error!("edit_repo HTTP failed for {}: {}", new_url, e);
+            format!("Error fetching new repo data: {}", e)
+        })?;
 
     // Carry system_version forward so the user's tracking state is not lost.
     new_repo_data.system_version = old_system_version;
 
     // 3. Atomically replace old_url with new_url under lock.
     let _guard = state.lock.lock().await;
-    app_content_handler::edit_repo(&state.path, &old_url, new_url, new_repo_data)
-        .map_err(|e| format!("Failed to update repo: {}", e))
+    app_content_handler::edit_repo(&state.path, &old_url, new_url, new_repo_data).map_err(|e| {
+        log::error!("edit_repo persist failed: {}", e);
+        format!("Failed to update repo: {}", e)
+    })
 }
 
 #[tauri::command]
@@ -164,8 +195,10 @@ async fn mark_as_updated(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::upd_repo_status(&state.path, &url)
-        .map_err(|e| format!("Failed to mark repo as updated {}: {}", url, e))
+    app_content_handler::upd_repo_status(&state.path, &url).map_err(|e| {
+        log::error!("mark_as_updated failed for {}: {}", url, e);
+        format!("Failed to mark repo as updated {}: {}", url, e)
+    })
 }
 
 #[derive(Serialize)]
@@ -193,19 +226,22 @@ async fn refresh_all(
     }
 
     // 2. Parallel HTTP calls — no lock held during network I/O.
+    //    buffer_unordered(8) caps concurrent requests so a large list doesn't
+    //    DoS a small Forgejo host or exhaust the GitHub rate-limit budget.
     let config = state.config.lock().await.clone();
 
-    let handles: Vec<_> = repos_snapshot
-        .iter()
+    use futures::stream::{self, StreamExt};
+    let tasks: Vec<_> = repos_snapshot
+        .into_iter()
         .map(|(url, repo)| {
-            let url = url.clone();
-            let repo = repo.clone();
             let config = config.clone();
-            tokio::task::spawn(async move {
-                (url, GitHandler {}.refresh_repo(&config, &repo).await)
-            })
+            async move { (url, GitHandler {}.refresh_repo(&config, &repo).await) }
         })
         .collect();
+    let results: Vec<_> = stream::iter(tasks)
+        .buffer_unordered(8)
+        .collect()
+        .await;
 
     // 3. Collect results, re-read for any concurrent changes, write once.
     let _guard = state.lock.lock().await;
@@ -215,17 +251,19 @@ async fn refresh_all(
     let mut ok_urls: Vec<String> = Vec::new();
     let mut err_pairs: Vec<(String, String)> = Vec::new();
 
-    for handle in handles {
-        match handle.await {
-            Ok((url, Ok(new_data))) => {
-                all_repos.insert(url.clone(), new_data);
-                ok_urls.push(url);
-            }
-            Ok((url, Err(e))) => {
-                err_pairs.push((url, e));
+    for (url, outcome) in results {
+        match outcome {
+            Ok(new_data) => {
+                // Only update if the repo still exists — silently skip repos
+                // deleted while their HTTP call was in flight (TOCTOU guard).
+                if all_repos.contains_key(&url) {
+                    all_repos.insert(url.clone(), new_data);
+                    ok_urls.push(url);
+                }
             }
             Err(e) => {
-                err_pairs.push(("(unknown)".to_string(), e.to_string()));
+                log::error!("refresh_all: failed to refresh {}: {}", url, e);
+                err_pairs.push((url, e));
             }
         }
     }

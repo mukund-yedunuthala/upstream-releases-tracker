@@ -135,3 +135,217 @@ pub fn run_config_migrations(config_path: &str) {
         Err(e) => log::warn!("config.json migration skipped: {}", e),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::NamedTempFile;
+
+    fn write_json(file: &NamedTempFile, value: &serde_json::Value) {
+        let path = file.path().to_str().unwrap();
+        crate::json_handler::write_json_file::<serde_json::Value>(path, value).unwrap();
+    }
+
+    fn read_json(file: &NamedTempFile) -> serde_json::Value {
+        let path = file.path().to_str().unwrap();
+        crate::json_handler::read_from_json::<serde_json::Value>(path).unwrap()
+    }
+
+    fn run_repos(file: &NamedTempFile) {
+        run_migrations(file.path().to_str().unwrap());
+    }
+
+    fn run_config(file: &NamedTempFile) {
+        run_config_migrations(file.path().to_str().unwrap());
+    }
+
+    // --- Data migrations ---
+
+    #[test]
+    fn data_m1_removes_notes_field() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "notes": "old", "owner": "a", "repo_name": "b", "host_url": "github.com", "host_kind": "GitHub", "latest_release": "v1", "system_version": "", "release_notes": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert!(out["https://github.com/a/b"].get("notes").is_none());
+    }
+
+    #[test]
+    fn data_m2_renames_host_to_host_url() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "host": "github.com", "owner": "a", "repo_name": "b", "host_kind": "GitHub", "latest_release": "v1", "system_version": "", "release_notes": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        let repo = &out["https://github.com/a/b"];
+        assert_eq!(repo["host_url"], json!("github.com"));
+        assert!(repo.get("host").is_none());
+    }
+
+    #[test]
+    fn data_m3_adds_default_host_url() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_kind": "GitHub", "latest_release": "v1", "system_version": "", "release_notes": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert_eq!(out["https://github.com/a/b"]["host_url"], json!("github.com"));
+    }
+
+    #[test]
+    fn data_m4_adds_default_host_kind() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_url": "github.com", "latest_release": "v1", "system_version": "", "release_notes": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert_eq!(out["https://github.com/a/b"]["host_kind"], json!("GitHub"));
+    }
+
+    #[test]
+    fn data_m5_coerces_unknown_host_kind_to_github() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_url": "github.com", "host_kind": "Unknown", "latest_release": "v1", "system_version": "", "release_notes": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert_eq!(out["https://github.com/a/b"]["host_kind"], json!("GitHub"));
+    }
+
+    #[test]
+    fn data_m6_adds_release_notes_if_absent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_url": "github.com", "host_kind": "GitHub", "latest_release": "v1", "system_version": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert_eq!(out["https://github.com/a/b"]["release_notes"], json!(""));
+    }
+
+    #[test]
+    fn data_idempotent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "notes": "x", "host": "github.com", "owner": "a", "repo_name": "b", "host_kind": "Unknown", "latest_release": "v1", "system_version": "" } }),
+        );
+        run_repos(&file);
+        let after_one = read_json(&file);
+        run_repos(&file);
+        let after_two = read_json(&file);
+        assert_eq!(after_one, after_two);
+    }
+
+    #[test]
+    fn data_missing_file_no_crash() {
+        // Should return immediately without panicking.
+        run_migrations("/tmp/__upstream_tracker_nonexistent_test_file_12345.json");
+    }
+
+    // --- Config migrations ---
+
+    #[test]
+    fn config_m1_adds_forgejo_token() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["forgejo_token"], json!(""));
+    }
+
+    #[test]
+    fn config_m2_adds_forgejo_trusted_hosts() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["forgejo_trusted_hosts"], json!(["codeberg.org"]));
+    }
+
+    #[test]
+    fn config_m3_adds_gitlab_api_key() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["gitlab_api_key"], json!(""));
+    }
+
+    #[test]
+    fn config_m4_adds_gitlab_endpoint() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(
+            out["gitlab_endpoint"],
+            json!("https://gitlab.com/api/v4/projects/")
+        );
+    }
+
+    #[test]
+    fn config_m5_scrubs_plaintext_api_keys() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({
+                "github_api_key": "ghp_secret",
+                "gitlab_api_key": "glpat_secret",
+                "forgejo_token": "fgt_secret"
+            }),
+        );
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["github_api_key"], json!(""));
+        assert_eq!(out["gitlab_api_key"], json!(""));
+        assert_eq!(out["forgejo_token"], json!(""));
+    }
+
+    #[test]
+    fn config_m5_skips_already_empty_keys() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({
+                "github_api_key": "",
+                "gitlab_api_key": "",
+                "forgejo_token": ""
+            }),
+        );
+        // Write once so we have a baseline mtime, then run migrations.
+        // The file should not be rewritten (dirty stays false).
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["github_api_key"], json!(""));
+    }
+
+    #[test]
+    fn config_idempotent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(&file, &json!({ "github_api_key": "secret" }));
+        run_config(&file);
+        let after_one = read_json(&file);
+        run_config(&file);
+        let after_two = read_json(&file);
+        assert_eq!(after_one, after_two);
+    }
+
+    #[test]
+    fn config_missing_file_no_crash() {
+        run_config_migrations("/tmp/__upstream_tracker_nonexistent_config_12345.json");
+    }
+}

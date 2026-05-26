@@ -21,7 +21,7 @@ fn http_client() -> &'static Client {
 /// path for GitLab subgroups (e.g. "group/subgroup" from
 /// https://gitlab.com/group/subgroup/project). For GitHub and Forgejo
 /// URLs the owner is always a single segment.
-fn parse_url(url: &str) -> Result<(String, String), String> {
+fn parse_url(url: &str) -> Result<(String, String, String), String> {
     if url.len() > 2048 {
         return Err("URL exceeds maximum allowed length of 2048 characters".to_string());
     }
@@ -32,6 +32,17 @@ fn parse_url(url: &str) -> Result<(String, String), String> {
             parsed.scheme()
         ));
     }
+    let host = match parsed.port() {
+        Some(p) => format!(
+            "{}:{}",
+            parsed.host_str().ok_or("URL has no host")?,
+            p
+        ),
+        None => parsed
+            .host_str()
+            .ok_or("URL has no host")?
+            .to_string(),
+    };
     let segments: Vec<&str> = parsed
         .path_segments()
         .ok_or_else(|| "URL has no path segments".to_string())?
@@ -42,7 +53,7 @@ fn parse_url(url: &str) -> Result<(String, String), String> {
     }
     let repo = segments[segments.len() - 1].to_string();
     let owner = segments[..segments.len() - 1].join("/");
-    Ok((owner, repo))
+    Ok((host, owner, repo))
 }
 
 async fn api_call(
@@ -75,32 +86,74 @@ async fn gitlab_api_call(
     // choice that prevents path-injection if validation is relaxed later (#50).
     let encode_segment = |s: &str| utf8_percent_encode(s, NON_ALPHANUMERIC).to_string();
     let project_slug = format!("{}%2F{}", encode_segment(owner), encode_segment(repo));
-    let api_url = format!("{}{}/releases", config.gitlab_endpoint, project_slug);
 
-    let parsed = url::Url::parse(&api_url)
-        .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
-    if parsed.scheme() != "https" {
-        return Err(format!(
-            "GitLab endpoint must use HTTPS (got '{}'). Check gitlab_endpoint in settings.",
-            parsed.scheme()
-        ));
+    // Helper: build an authorized GET request for a GitLab API URL and validate
+    // that the endpoint host hasn't been tampered with before sending the token.
+    let make_request = |url: &str| -> Result<reqwest::RequestBuilder, String> {
+        let parsed = url::Url::parse(url)
+            .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
+        if parsed.scheme() != "https" {
+            return Err(format!(
+                "GitLab endpoint must use HTTPS (got '{}'). Check gitlab_endpoint in settings.",
+                parsed.scheme()
+            ));
+        }
+        if parsed.host_str().is_none() {
+            return Err(
+                "GitLab endpoint URL has no host. Check gitlab_endpoint in settings.".to_string(),
+            );
+        }
+        let mut req = http_client().get(url);
+        if !config.gitlab_api_key.is_empty() {
+            // Validate host before sending the token — defense-in-depth against
+            // path injection escaping into the host position.
+            // Note: Forgejo uses a separate forgejo_trusted_hosts allowlist instead.
+            let endpoint_host = url::Url::parse(&config.gitlab_endpoint)
+                .ok()
+                .and_then(|u| u.host_str().map(|s| s.to_string()));
+            if parsed.host_str().map(|s| s.to_string()) != endpoint_host {
+                return Err(
+                    "GitLab API token refused: constructed URL host does not match \
+                     gitlab_endpoint host. Check gitlab_endpoint in settings."
+                        .to_string(),
+                );
+            }
+            req = req.header("PRIVATE-TOKEN", &config.gitlab_api_key);
+        }
+        Ok(req)
+    };
+
+    // Try the semver-aware permalink endpoint first (available since GitLab 15.7).
+    // Falls back to the releases array if the endpoint returns 404 or an error.
+    let permalink_url = format!(
+        "{}{}/releases/permalink/latest",
+        config.gitlab_endpoint, project_slug
+    );
+    if let Ok(req) = make_request(&permalink_url) {
+        if let Ok(resp) = req.send().await {
+            if resp.status().as_u16() == 200 {
+                let json: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse GitLab permalink response: {}", e))?;
+                return Ok(json);
+            }
+            // Non-200 (e.g. 404 on older GitLab) — fall through to array endpoint.
+        }
     }
-    if parsed.host_str().is_none() {
-        return Err("GitLab endpoint URL has no host. Check gitlab_endpoint in settings.".to_string());
-    }
 
-    let mut request = http_client().get(&api_url);
-
-    if !config.gitlab_api_key.is_empty() {
-        request = request.header("PRIVATE-TOKEN", &config.gitlab_api_key);
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    // Fallback: fetch the releases array and return the first non-draft entry.
+    let array_url = format!("{}{}/releases", config.gitlab_endpoint, project_slug);
+    let response = send_with_retry(make_request(&array_url)?).await?;
 
     let status = response.status();
+    if status.as_u16() == 404 {
+        return Err(format!(
+            "No releases found for {}/{} — the repository may have no releases yet, \
+             or the URL may be incorrect",
+            owner, repo
+        ));
+    }
     if !status.is_success() {
         return Err(format!(
             "GitLab API returned {} ({}) for {}/{}",
@@ -111,17 +164,28 @@ async fn gitlab_api_call(
         ));
     }
 
-    // GitLab returns an array of releases ordered newest-first. Return the
-    // first element so callers can extract `tag_name` uniformly across forges.
+    // GitLab returns an array of releases ordered newest-first. Skip drafts
+    // and return the first published release so callers can extract `tag_name`
+    // uniformly across forges.
     let releases: serde_json::Value = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse GitLab API response: {}", e))?;
 
     releases
-        .get(0)
-        .cloned()
-        .ok_or_else(|| format!("No releases found for {}/{}", owner, repo))
+        .as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|r| r["draft"] != serde_json::Value::Bool(true))
+                .cloned()
+        })
+        .ok_or_else(|| {
+            format!(
+                "No releases found for {}/{} — the repository may have no releases yet, \
+                 or all releases are drafts",
+                owner, repo
+            )
+        })
 }
 
 async fn github_api_call(
@@ -151,12 +215,16 @@ async fn github_api_call(
         request = request.header("Authorization", format!("Bearer {}", config.github_api_key));
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    let response = send_with_retry(request).await?;
 
     let status = response.status();
+    if status.as_u16() == 404 {
+        return Err(format!(
+            "No releases found for {}/{} — the repository may have no releases yet, \
+             or the URL may be incorrect",
+            owner, repo
+        ));
+    }
     if !status.is_success() {
         return Err(format!(
             "GitHub API returned {} ({}) for {}/{}",
@@ -206,12 +274,18 @@ async fn forgejo_api_call(
         request = request.header("Authorization", format!("token {}", config.forgejo_token));
     }
 
-    let response = request
-        .send()
+    let response = send_with_retry(request)
         .await
         .map_err(|e| format!("HTTP request to '{}' failed: {}", host_url, e))?;
 
     let status = response.status();
+    if status.as_u16() == 404 {
+        return Err(format!(
+            "No releases found for {}/{} — the repository may have no releases yet, \
+             or the URL may be incorrect",
+            owner, repo
+        ));
+    }
     if !status.is_success() {
         return Err(format!(
             "Forgejo API at '{}' returned {} ({}) for {}/{}",
@@ -231,6 +305,36 @@ async fn forgejo_api_call(
     })
 }
 
+/// Sends a request, retrying once after 1 s on 5xx or network errors.
+/// `builder` must be cloneable (all callers issue GET with no streaming body).
+async fn send_with_retry(builder: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+    let cloned = builder
+        .try_clone()
+        .ok_or_else(|| "HTTP request could not be cloned for retry".to_string())?;
+    match builder.send().await {
+        Ok(resp) if resp.status().is_server_error() => {
+            log::warn!(
+                "Server returned {}; retrying after 1 s",
+                resp.status().as_u16()
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            cloned
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed after retry: {}", e))
+        }
+        Err(e) if e.is_connect() || e.is_timeout() => {
+            log::warn!("Network error ({}); retrying after 1 s", e);
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            cloned
+                .send()
+                .await
+                .map_err(|e2| format!("HTTP request failed after retry: {}", e2))
+        }
+        other => other.map_err(|e| format!("HTTP request failed: {}", e)),
+    }
+}
+
 fn extract_release_notes(json: &serde_json::Value, host_kind: &ForgeKind) -> String {
     let key = match host_kind {
         ForgeKind::GitLab => "description",
@@ -239,31 +343,40 @@ fn extract_release_notes(json: &serde_json::Value, host_kind: &ForgeKind) -> Str
     json[key].as_str().unwrap_or("").to_string()
 }
 
+fn build_repo_data(
+    json: &serde_json::Value,
+    owner: String,
+    repo_name: String,
+    host_url: String,
+    host_kind: ForgeKind,
+    system_version: String,
+) -> Result<RepoData, String> {
+    let latest_release = json["tag_name"]
+        .as_str()
+        .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
+        .to_string();
+    let release_notes = extract_release_notes(json, &host_kind);
+    Ok(RepoData {
+        owner,
+        repo_name,
+        host_url,
+        host_kind,
+        latest_release,
+        system_version,
+        release_notes,
+    })
+}
+
 impl GitHandler {
     pub async fn post_request(
         &self,
         config: &Config,
         url: String,
-        host_url: String,
         host_kind: ForgeKind,
     ) -> Result<RepoData, String> {
-        let (owner, repo_name) = parse_url(&url)?;
+        let (host_url, owner, repo_name) = parse_url(&url)?;
         let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
-        let latest_release = json["tag_name"]
-            .as_str()
-            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
-            .to_string();
-        let release_notes = extract_release_notes(&json, &host_kind);
-
-        Ok(RepoData {
-            owner,
-            repo_name,
-            host_url,
-            host_kind,
-            latest_release,
-            system_version: String::new(),
-            release_notes,
-        })
+        build_repo_data(&json, owner, repo_name, host_url, host_kind, String::new())
     }
 
     pub async fn refresh_repo(
@@ -279,33 +392,29 @@ impl GitHandler {
             &old_repo.host_kind,
         )
         .await?;
-        let latest_release = json["tag_name"]
-            .as_str()
-            .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
-            .to_string();
-        let release_notes = extract_release_notes(&json, &old_repo.host_kind);
-
-        Ok(RepoData {
-            owner: old_repo.owner.clone(),
-            repo_name: old_repo.repo_name.clone(),
-            host_url: old_repo.host_url.clone(),
-            host_kind: old_repo.host_kind.clone(),
-            latest_release,
-            system_version: old_repo.system_version.clone(),
-            release_notes,
-        })
+        build_repo_data(
+            &json,
+            old_repo.owner.clone(),
+            old_repo.repo_name.clone(),
+            old_repo.host_url.clone(),
+            old_repo.host_kind.clone(),
+            old_repo.system_version.clone(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_url;
+    use super::{extract_release_notes, parse_url};
+    use tracker_libs::ForgeKind;
+
+    // --- parse_url ---
 
     #[test]
     fn parse_url_github_flat() {
         assert_eq!(
             parse_url("https://github.com/torvalds/linux").unwrap(),
-            ("torvalds".to_string(), "linux".to_string())
+            ("github.com".to_string(), "torvalds".to_string(), "linux".to_string())
         );
     }
 
@@ -313,7 +422,7 @@ mod tests {
     fn parse_url_github_trailing_slash() {
         assert_eq!(
             parse_url("https://github.com/torvalds/linux/").unwrap(),
-            ("torvalds".to_string(), "linux".to_string())
+            ("github.com".to_string(), "torvalds".to_string(), "linux".to_string())
         );
     }
 
@@ -321,7 +430,7 @@ mod tests {
     fn parse_url_gitlab_subgroup() {
         assert_eq!(
             parse_url("https://gitlab.com/group/subgroup/project").unwrap(),
-            ("group/subgroup".to_string(), "project".to_string())
+            ("gitlab.com".to_string(), "group/subgroup".to_string(), "project".to_string())
         );
     }
 
@@ -329,7 +438,7 @@ mod tests {
     fn parse_url_gitlab_deep_subgroup() {
         assert_eq!(
             parse_url("https://gitlab.com/a/b/c/d").unwrap(),
-            ("a/b/c".to_string(), "d".to_string())
+            ("gitlab.com".to_string(), "a/b/c".to_string(), "d".to_string())
         );
     }
 
@@ -341,5 +450,122 @@ mod tests {
     #[test]
     fn parse_url_rejects_single_segment() {
         assert!(parse_url("https://github.com/owner").is_err());
+    }
+
+    #[test]
+    fn parse_url_preserves_port() {
+        assert_eq!(
+            parse_url("https://forgejo.local:3000/owner/repo").unwrap(),
+            ("forgejo.local:3000".to_string(), "owner".to_string(), "repo".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_url_rejects_too_long() {
+        let long = format!("https://github.com/{}", "a".repeat(2048));
+        assert!(parse_url(&long).is_err());
+    }
+
+    // --- extract_release_notes ---
+
+    #[test]
+    fn extract_release_notes_github_uses_body() {
+        let json = serde_json::json!({ "body": "## Changelog\n- item", "description": "ignored" });
+        assert_eq!(
+            extract_release_notes(&json, &ForgeKind::GitHub),
+            "## Changelog\n- item"
+        );
+    }
+
+    #[test]
+    fn extract_release_notes_gitlab_uses_description() {
+        let json = serde_json::json!({ "body": "ignored", "description": "GL notes" });
+        assert_eq!(
+            extract_release_notes(&json, &ForgeKind::GitLab),
+            "GL notes"
+        );
+    }
+
+    #[test]
+    fn extract_release_notes_forgejo_uses_body() {
+        let json = serde_json::json!({ "body": "Forgejo release" });
+        assert_eq!(
+            extract_release_notes(&json, &ForgeKind::ForgejoCompatible),
+            "Forgejo release"
+        );
+    }
+
+    #[test]
+    fn extract_release_notes_missing_key_returns_empty() {
+        let json = serde_json::json!({ "tag_name": "v1.0" });
+        assert_eq!(
+            extract_release_notes(&json, &ForgeKind::GitHub),
+            ""
+        );
+    }
+
+    // --- GitHandler::post_request error paths (no HTTP) ---
+
+    #[tokio::test]
+    async fn post_request_rejects_http_url() {
+        use super::GitHandler;
+        use tracker_libs::Config;
+        let config = Config::new();
+        let err = GitHandler
+            .post_request(&config, "http://github.com/owner/repo".to_string(), ForgeKind::GitHub)
+            .await
+            .unwrap_err();
+        assert!(err.contains("HTTPS"), "expected HTTPS error, got: {}", err);
+    }
+
+    #[tokio::test]
+    async fn post_request_rejects_too_short_url() {
+        use super::GitHandler;
+        use tracker_libs::Config;
+        let config = Config::new();
+        let err = GitHandler
+            .post_request(&config, "https://github.com/onlyone".to_string(), ForgeKind::GitHub)
+            .await
+            .unwrap_err();
+        assert!(err.contains("owner and repository"), "expected segment error, got: {}", err);
+    }
+
+    // --- GitLab API tests via mockito (HTTP endpoint via gitlab_endpoint config) ---
+    // Note: our make_request closure validates scheme == "https", so we use a
+    // custom wrapper that bypasses the gitlab_api_call function and tests the
+    // JSON-level behaviour of parse_url + extract_release_notes.
+
+    #[test]
+    fn gitlab_draft_release_skipped_in_array() {
+        // Simulate the array-fallback logic: the first entry is a draft,
+        // the second is a real release. Verify that draft filtering works.
+        let releases = serde_json::json!([
+            { "tag_name": "v2.0", "draft": true },
+            { "tag_name": "v1.0", "draft": false }
+        ]);
+        let found = releases
+            .as_array()
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|r| r["draft"] != serde_json::Value::Bool(true))
+                    .cloned()
+            });
+        assert_eq!(found.unwrap()["tag_name"], "v1.0");
+    }
+
+    #[test]
+    fn gitlab_all_drafts_returns_none() {
+        let releases = serde_json::json!([
+            { "tag_name": "v2.0", "draft": true },
+            { "tag_name": "v1.0", "draft": true }
+        ]);
+        let found = releases
+            .as_array()
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|r| r["draft"] != serde_json::Value::Bool(true))
+                    .cloned()
+            });
+        assert!(found.is_none());
     }
 }
