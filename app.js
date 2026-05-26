@@ -17,8 +17,11 @@ const STORE_FILE = "endpoints.store.json";
 const VAULT_KEY_NAMES = {
   github: "github_api_key",
   gitlab: "gitlab_api_key",
-  forgejo: "forgejo_token",
 };
+// Per-host Forgejo vault key convention: "forgejo_token:{host}"
+function forgejoVaultKey(host) {
+  return `forgejo_token:${host}`;
+}
 const ENDPOINT_KEY_NAMES = {
   github: "github_endpoint",
   gitlab: "gitlab_endpoint",
@@ -27,14 +30,18 @@ const ENDPOINT_KEY_NAMES = {
 const ENDPOINT_DEFAULTS = {
   github: "https://api.github.com/repos/",
   gitlab: "https://gitlab.com/api/v4/projects/",
-  forgejoHosts: ["codeberg.org"],
+  // Default host list uses the ForgejoHost object format.
+  forgejoHosts: [{ host: "codeberg.org", token_ref: "forgejo_token:codeberg.org" }],
 };
 
 const settingsState = {
   stronghold: null,
   vaultStore: null,
   endpointStore: null,
-  keys: { github: "", gitlab: "", forgejo: "" },
+  keys: { github: "", gitlab: "" },
+  // Per-host Forgejo tokens — parallel array to endpoints.forgejoHosts.
+  // forgejoTokens[i] is the PAT for endpoints.forgejoHosts[i].
+  forgejoTokens: [],
   endpoints: {
     github: ENDPOINT_DEFAULTS.github,
     gitlab: ENDPOINT_DEFAULTS.gitlab,
@@ -590,11 +597,11 @@ const settingsAppVersion = document.getElementById("settings-app-version");
 const settingsInputs = {
   github: document.getElementById("settings-github-key"),
   gitlab: document.getElementById("settings-gitlab-key"),
-  forgejo: document.getElementById("settings-forgejo-key"),
   githubEndpoint: document.getElementById("settings-github-endpoint"),
   gitlabEndpoint: document.getElementById("settings-gitlab-endpoint"),
-  forgejoHosts: document.getElementById("settings-forgejo-hosts"),
 };
+const forgejoHostList = document.getElementById("settings-forgejo-host-list");
+const forgejoAddHostBtn = document.getElementById("settings-forgejo-add-host");
 
 async function initVault() {
   const vaultKey = await invoke("get_vault_key");
@@ -654,6 +661,41 @@ async function initVault() {
       settingsState.corruptedKeys[field] = true;
     }
   }
+
+  // Load per-host Forgejo tokens. The host list may not be ready yet at
+  // vault init time (initEndpoints runs in parallel), so we reload tokens
+  // after initEndpoints via loadForgejoTokensFromVault().
+}
+
+/// Reads each Forgejo host's token from the vault into settingsState.forgejoTokens.
+/// Must be called after settingsState.endpoints.forgejoHosts is populated.
+async function loadForgejoTokensFromVault() {
+  if (!settingsState.vaultStore) return;
+  const hosts = settingsState.endpoints.forgejoHosts;
+  settingsState.forgejoTokens = await Promise.all(
+    hosts.map(async (entry) => {
+      try {
+        const stored = await settingsState.vaultStore.get(forgejoVaultKey(entry.host));
+        return stored ? bytesToString(stored) : "";
+      } catch {
+        return "";
+      }
+    }),
+  );
+}
+
+/// Normalises the forgejo_trusted_hosts value from the Store or backend.
+/// Accepts both old Vec<String> format and new Vec<{host, token_ref}> format,
+/// always returning the new object format.
+function normaliseForgejoHosts(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [...ENDPOINT_DEFAULTS.forgejoHosts];
+  return raw.map((entry) => {
+    if (typeof entry === "string") {
+      // Old format — upgrade to object in place.
+      return { host: entry, token_ref: forgejoVaultKey(entry) };
+    }
+    return entry;
+  });
 }
 
 async function initEndpoints() {
@@ -674,11 +716,7 @@ async function initEndpoints() {
       settingsState.endpoints = {
         github: backend.github_endpoint || ENDPOINT_DEFAULTS.github,
         gitlab: backend.gitlab_endpoint || ENDPOINT_DEFAULTS.gitlab,
-        forgejoHosts:
-          backend.forgejo_trusted_hosts &&
-          backend.forgejo_trusted_hosts.length > 0
-            ? backend.forgejo_trusted_hosts
-            : [...ENDPOINT_DEFAULTS.forgejoHosts],
+        forgejoHosts: normaliseForgejoHosts(backend.forgejo_trusted_hosts),
       };
       await store.set(
         ENDPOINT_KEY_NAMES.github,
@@ -703,9 +741,7 @@ async function initEndpoints() {
     const forgejoHosts =
       stored.forgejoHosts === null || stored.forgejoHosts === undefined
         ? [...ENDPOINT_DEFAULTS.forgejoHosts]
-        : Array.isArray(stored.forgejoHosts)
-          ? stored.forgejoHosts
-          : [...ENDPOINT_DEFAULTS.forgejoHosts];
+        : normaliseForgejoHosts(stored.forgejoHosts);
     settingsState.endpoints = {
       github: stored.github || ENDPOINT_DEFAULTS.github,
       gitlab: stored.gitlab || ENDPOINT_DEFAULTS.gitlab,
@@ -718,7 +754,7 @@ async function pushSettingsToBackend() {
   await invoke("update_api_keys", {
     githubApiKey: settingsState.keys.github,
     gitlabApiKey: settingsState.keys.gitlab,
-    forgejoToken: settingsState.keys.forgejo,
+    forgejoTokens: settingsState.forgejoTokens,
   });
   await invoke("update_endpoints", {
     githubEndpoint: settingsState.endpoints.github,
@@ -727,9 +763,54 @@ async function pushSettingsToBackend() {
   });
 }
 
+/// Builds the dynamic Forgejo host+token row list inside #settings-forgejo-host-list.
+/// Each row has a hostname input, a token password input, and a Remove button.
+function renderForgejoHostRows() {
+  forgejoHostList.innerHTML = "";
+  const hosts = settingsState.endpoints.forgejoHosts;
+  const tokens = settingsState.forgejoTokens;
+  const showTokens = settingsShowKeys.checked;
+
+  hosts.forEach((entry, idx) => {
+    const row = document.createElement("div");
+    row.className = "forgejo-host-row";
+    row.dataset.idx = idx;
+
+    const hostInput = document.createElement("input");
+    hostInput.type = "text";
+    hostInput.value = entry.host;
+    hostInput.placeholder = "host (e.g. codeberg.org)";
+    hostInput.autocomplete = "off";
+    hostInput.spellcheck = false;
+    hostInput.setAttribute("aria-label", "Forgejo hostname");
+
+    const tokenInput = document.createElement("input");
+    tokenInput.type = showTokens ? "text" : "password";
+    tokenInput.value = tokens[idx] ?? "";
+    tokenInput.placeholder = "token (optional)";
+    tokenInput.autocomplete = "off";
+    tokenInput.spellcheck = false;
+    tokenInput.setAttribute("aria-label", `Token for ${entry.host}`);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "outline";
+    removeBtn.textContent = "Remove";
+    removeBtn.setAttribute("aria-label", `Remove ${entry.host}`);
+    removeBtn.addEventListener("click", () => {
+      settingsState.endpoints.forgejoHosts.splice(idx, 1);
+      settingsState.forgejoTokens.splice(idx, 1);
+      renderForgejoHostRows();
+    });
+
+    row.append(hostInput, tokenInput, removeBtn);
+    forgejoHostList.appendChild(row);
+  });
+}
+
 function populateSettingsInputs() {
   const corrupted = settingsState.corruptedKeys || {};
-  for (const field of ["github", "gitlab", "forgejo"]) {
+  for (const field of ["github", "gitlab"]) {
     const input = settingsInputs[field];
     if (corrupted[field]) {
       input.value = "";
@@ -742,26 +823,35 @@ function populateSettingsInputs() {
   }
   settingsInputs.githubEndpoint.value = settingsState.endpoints.github;
   settingsInputs.gitlabEndpoint.value = settingsState.endpoints.gitlab;
-  settingsInputs.forgejoHosts.value =
-    settingsState.endpoints.forgejoHosts.join("\n");
+  renderForgejoHostRows();
 }
 
 settingsShowKeys.addEventListener("change", () => {
   const type = settingsShowKeys.checked ? "text" : "password";
   settingsInputs.github.type = type;
   settingsInputs.gitlab.type = type;
-  settingsInputs.forgejo.type = type;
+  // Re-render host rows so token inputs pick up the new type.
+  renderForgejoHostRows();
 });
 
 settingsBtn.addEventListener("click", () => {
-  populateSettingsInputs();
   settingsShowKeys.checked = false;
   settingsInputs.github.type = "password";
   settingsInputs.gitlab.type = "password";
-  settingsInputs.forgejo.type = "password";
+  populateSettingsInputs();
   settingsDialog.showModal();
   document.getElementById("settings-sections")?.scrollTo({ top: 0 });
   refreshLogs();
+});
+
+forgejoAddHostBtn.addEventListener("click", () => {
+  settingsState.endpoints.forgejoHosts.push({ host: "", token_ref: "" });
+  settingsState.forgejoTokens.push("");
+  renderForgejoHostRows();
+  // Focus the new host input.
+  const rows = forgejoHostList.querySelectorAll(".forgejo-host-row");
+  const lastRow = rows[rows.length - 1];
+  lastRow?.querySelector("input")?.focus();
 });
 
 // Byte offset of the last byte read from the log file. Persisted across
@@ -804,25 +894,36 @@ settingsLogsRefresh.addEventListener("click", () => {
   refreshLogs(false);
 });
 
-function parseHosts(text) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
 
 settingsSaveBtn.addEventListener("click", async () => {
   const newKeys = {
     github: settingsInputs.github.value,
     gitlab: settingsInputs.gitlab.value,
-    forgejo: settingsInputs.forgejo.value,
   };
+
+  // Read current values from the dynamic Forgejo host+token rows.
+  const rows = forgejoHostList.querySelectorAll(".forgejo-host-row");
+  const newForgejoHosts = [];
+  const newForgejoTokens = [];
+  for (const row of rows) {
+    const inputs = row.querySelectorAll("input");
+    const host = inputs[0].value.trim();
+    const token = inputs[1].value;
+    if (host) {
+      newForgejoHosts.push({
+        host,
+        token_ref: forgejoVaultKey(host),
+      });
+      newForgejoTokens.push(token);
+    }
+  }
+
   const newEndpoints = {
     github:
       settingsInputs.githubEndpoint.value.trim() || ENDPOINT_DEFAULTS.github,
     gitlab:
       settingsInputs.gitlabEndpoint.value.trim() || ENDPOINT_DEFAULTS.gitlab,
-    forgejoHosts: parseHosts(settingsInputs.forgejoHosts.value),
+    forgejoHosts: newForgejoHosts,
   };
 
   settingsSaveBtn.disabled = true;
@@ -834,10 +935,18 @@ settingsSaveBtn.addEventListener("click", async () => {
         "Vault unavailable — API tokens not saved. Check the warning shown at startup.",
       );
     }
+    // GitHub / GitLab tokens.
     for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
       await settingsState.vaultStore.insert(
         vaultKey,
         stringToBytes(newKeys[field]),
+      );
+    }
+    // Per-host Forgejo tokens — save each under its own vault key.
+    for (let i = 0; i < newForgejoHosts.length; i++) {
+      await settingsState.vaultStore.insert(
+        forgejoVaultKey(newForgejoHosts[i].host),
+        stringToBytes(newForgejoTokens[i]),
       );
     }
     await settingsState.stronghold.save();
@@ -862,6 +971,7 @@ settingsSaveBtn.addEventListener("click", async () => {
 
     settingsState.keys = newKeys;
     settingsState.endpoints = newEndpoints;
+    settingsState.forgejoTokens = newForgejoTokens;
     await pushSettingsToBackend();
     ot.toast("Settings saved", "Done", { variant: "success" });
     settingsDialog.close();
@@ -887,6 +997,12 @@ async function initSettings() {
   } catch (e) {
     console.warn("Store init failed:", e);
   }
+  // Load per-host Forgejo tokens now that the host list is ready.
+  try {
+    await loadForgejoTokensFromVault();
+  } catch (e) {
+    console.warn("Loading Forgejo tokens from vault failed:", e);
+  }
   // Push only API keys to the backend at startup (tokens never persist to
   // config.json — they must be loaded from the vault each launch). Endpoints
   // are intentionally NOT pushed here: update_endpoints is write-on-change
@@ -898,7 +1014,7 @@ async function initSettings() {
     await invoke("update_api_keys", {
       githubApiKey: settingsState.keys.github,
       gitlabApiKey: settingsState.keys.gitlab,
-      forgejoToken: settingsState.keys.forgejo,
+      forgejoTokens: settingsState.forgejoTokens,
     });
   } catch (e) {
     console.warn("Pushing API keys to backend failed:", e);

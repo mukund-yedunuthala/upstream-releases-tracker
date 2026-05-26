@@ -177,18 +177,6 @@
                             </small>
                         </label>
                         <label data-field>
-                            Forgejo / Gitea token
-                            <input
-                                type="password"
-                                id="settings-forgejo-key"
-                                autocomplete="off"
-                                spellcheck="false"
-                            />
-                            <small data-hint>
-                                Access token with <code>read:repository</code> permission. Only needed for private repos or higher rate limits.
-                            </small>
-                        </label>
-                        <label data-field>
                             <input
                                 type="checkbox"
                                 role="switch"
@@ -218,14 +206,18 @@
                                 maxlength="2048"
                             />
                         </label>
-                        <label data-field>
-                            Forgejo trusted hosts (one per line)
-                            <textarea
-                                id="settings-forgejo-hosts"
-                                rows="4"
-                                placeholder="codeberg.org"
-                            ></textarea>
-                        </label>
+                        <div data-field>
+                            <span>Forgejo / Gitea hosts &amp; tokens</span>
+                            <small data-hint>
+                                Each trusted host can have its own access token
+                                (<code>read:repository</code> permission). Leave token
+                                blank for unauthenticated access (public repos only).
+                            </small>
+                            <div id="settings-forgejo-host-list"></div>
+                            <button type="button" id="settings-forgejo-add-host" class="outline">
+                                + Add host
+                            </button>
+                        </div>
                     </section>
 
                     <section class="settings-section">

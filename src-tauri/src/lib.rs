@@ -60,7 +60,7 @@ fn scrub_keys(config: &Config) -> Config {
     let mut c = config.clone();
     c.github_api_key = String::new();
     c.gitlab_api_key = String::new();
-    c.forgejo_token = String::new();
+    c.forgejo_tokens = vec![String::new(); c.forgejo_trusted_hosts.len()];
     c
 }
 
@@ -283,7 +283,7 @@ async fn refresh_all(
 struct Endpoints {
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<String>,
+    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
 }
 
 #[tauri::command]
@@ -341,18 +341,36 @@ async fn update_endpoints(
     state: tauri::State<'_, AppState>,
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<String>,
+    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
 ) -> Result<(), String> {
     // Validate inputs before touching in-memory state.
     validate_endpoint_url(&github_endpoint, "github_endpoint")?;
     validate_endpoint_url(&gitlab_endpoint, "gitlab_endpoint")?;
-    for host in &forgejo_trusted_hosts {
-        validate_forgejo_host(host)?;
+    for entry in &forgejo_trusted_hosts {
+        validate_forgejo_host(&entry.host)?;
+        // token_ref must be either empty or match the expected naming scheme.
+        // We only enforce it is not excessively long and has no control chars.
+        if entry.token_ref.len() > 512 {
+            return Err(format!(
+                "token_ref for host '{}' exceeds 512 characters",
+                entry.host
+            ));
+        }
+        if entry.token_ref.chars().any(|c| c.is_ascii_control()) {
+            return Err(format!(
+                "token_ref for host '{}' contains control characters",
+                entry.host
+            ));
+        }
     }
 
     // Update in-memory config; only write to disk when something changed.
     let (to_persist, changed) = {
         let mut cfg = state.config.lock().await;
+        // Resize forgejo_tokens to match the new host list, preserving tokens
+        // for hosts that remain and adding empty strings for new entries.
+        let new_len = forgejo_trusted_hosts.len();
+        cfg.forgejo_tokens.resize(new_len, String::new());
         let changed = cfg.github_endpoint != github_endpoint
             || cfg.gitlab_endpoint != gitlab_endpoint
             || cfg.forgejo_trusted_hosts != forgejo_trusted_hosts;
@@ -380,20 +398,27 @@ fn sanitize_token(token: &str, field: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+// forgejo_tokens: per-host PATs in the same order as forgejo_trusted_hosts.
+// An empty string at position i means no token for that host (unauthenticated).
 #[tauri::command]
 async fn update_api_keys(
     state: tauri::State<'_, AppState>,
     github_api_key: String,
     gitlab_api_key: String,
-    forgejo_token: String,
+    forgejo_tokens: Vec<String>,
 ) -> Result<(), String> {
     let github_api_key = sanitize_token(&github_api_key, "github_api_key")?;
     let gitlab_api_key = sanitize_token(&gitlab_api_key, "gitlab_api_key")?;
-    let forgejo_token = sanitize_token(&forgejo_token, "forgejo_token")?;
+    let forgejo_tokens: Result<Vec<String>, String> = forgejo_tokens
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| sanitize_token(&t, &format!("forgejo_tokens[{}]", i)))
+        .collect();
+    let forgejo_tokens = forgejo_tokens?;
     let mut cfg = state.config.lock().await;
     cfg.github_api_key = github_api_key;
     cfg.gitlab_api_key = gitlab_api_key;
-    cfg.forgejo_token = forgejo_token;
+    cfg.forgejo_tokens = forgejo_tokens;
     Ok(())
 }
 

@@ -123,6 +123,57 @@ pub fn run_config_migrations(config_path: &str) {
                         }
                     }
                 }
+
+                // Migration 6: convert forgejo_trusted_hosts from Vec<String>
+                // (old format) to Vec<{host, token_ref}> (N2 per-host tokens).
+                // Also removes the now-unused top-level forgejo_token field.
+                //
+                // Old format: ["codeberg.org", "gitea.example.com"]
+                // New format: [
+                //   {"host":"codeberg.org","token_ref":"forgejo_token:codeberg.org"},
+                //   {"host":"gitea.example.com","token_ref":"forgejo_token:gitea.example.com"}
+                // ]
+                //
+                // The existing single forgejo_token vault secret is NOT migrated
+                // automatically — the user must re-enter tokens per host in Settings.
+                // The old top-level forgejo_token key is removed from config.json
+                // (it was already blanked by migration 5, so no secret is lost).
+                if let Some(hosts_val) = obj.get("forgejo_trusted_hosts").cloned() {
+                    let needs_upgrade = hosts_val
+                        .as_array()
+                        .map(|arr| {
+                            // Needs upgrade if any element is a plain string.
+                            arr.iter().any(|v| v.is_string())
+                        })
+                        .unwrap_or(false);
+
+                    if needs_upgrade {
+                        let new_hosts: Vec<Value> = hosts_val
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|host| {
+                                serde_json::json!({
+                                    "host": host,
+                                    "token_ref": format!("forgejo_token:{}", host),
+                                })
+                            })
+                            .collect();
+                        obj.insert(
+                            "forgejo_trusted_hosts".to_string(),
+                            Value::Array(new_hosts),
+                        );
+                        dirty = true;
+                    }
+                }
+
+                // Remove the now-redundant top-level forgejo_token field.
+                // Config::new() no longer includes it; keep removing it so old
+                // config.json files that still carry the blank field are cleaned up.
+                if obj.remove("forgejo_token").is_some() {
+                    dirty = true;
+                }
             }
 
             if dirty {
@@ -259,21 +310,75 @@ mod tests {
     // --- Config migrations ---
 
     #[test]
-    fn config_m1_adds_forgejo_token() {
+    fn config_m1_adds_forgejo_token_then_m6_removes_it() {
+        // Migration 1 adds forgejo_token; migration 6 then removes the field.
+        // After both run, the key must be absent (not "" — it's gone entirely).
         let file = NamedTempFile::new().unwrap();
         write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
         run_config(&file);
         let out = read_json(&file);
-        assert_eq!(out["forgejo_token"], json!(""));
+        assert!(
+            out.get("forgejo_token").is_none(),
+            "forgejo_token should be removed by migration 6, got: {:?}",
+            out.get("forgejo_token")
+        );
     }
 
     #[test]
-    fn config_m2_adds_forgejo_trusted_hosts() {
+    fn config_m2_adds_forgejo_trusted_hosts_as_objects() {
+        // Migration 2 adds the default codeberg.org host; migration 6 upgrades
+        // the plain string to the object format used since N2.
         let file = NamedTempFile::new().unwrap();
         write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
         run_config(&file);
         let out = read_json(&file);
-        assert_eq!(out["forgejo_trusted_hosts"], json!(["codeberg.org"]));
+        assert_eq!(
+            out["forgejo_trusted_hosts"],
+            json!([{"host": "codeberg.org", "token_ref": "forgejo_token:codeberg.org"}])
+        );
+    }
+
+    #[test]
+    fn config_m6_upgrades_string_host_list_to_objects() {
+        // Simulates upgrading from a pre-N2 config that has Vec<String> hosts.
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({
+                "github_endpoint": "https://api.github.com/repos/",
+                "forgejo_trusted_hosts": ["codeberg.org", "gitea.example.com"],
+            }),
+        );
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(
+            out["forgejo_trusted_hosts"],
+            json!([
+                {"host": "codeberg.org", "token_ref": "forgejo_token:codeberg.org"},
+                {"host": "gitea.example.com", "token_ref": "forgejo_token:gitea.example.com"},
+            ])
+        );
+    }
+
+    #[test]
+    fn config_m6_object_host_list_unchanged() {
+        // If hosts are already in object format, migration 6 must not re-wrap them.
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({
+                "github_endpoint": "https://api.github.com/repos/",
+                "forgejo_trusted_hosts": [
+                    {"host": "codeberg.org", "token_ref": "forgejo_token:codeberg.org"},
+                ],
+            }),
+        );
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(
+            out["forgejo_trusted_hosts"],
+            json!([{"host": "codeberg.org", "token_ref": "forgejo_token:codeberg.org"}])
+        );
     }
 
     #[test]
@@ -312,7 +417,11 @@ mod tests {
         let out = read_json(&file);
         assert_eq!(out["github_api_key"], json!(""));
         assert_eq!(out["gitlab_api_key"], json!(""));
-        assert_eq!(out["forgejo_token"], json!(""));
+        // Migration 5 blanks forgejo_token; migration 6 then removes the field.
+        assert!(
+            out.get("forgejo_token").is_none(),
+            "forgejo_token should be removed by migration 6"
+        );
     }
 
     #[test]

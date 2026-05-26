@@ -247,8 +247,7 @@ async fn forgejo_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
-    // Reject hosts not on the user-managed allowlist to prevent token exfiltration.
-    // To add a new Forgejo host, add its hostname to forgejo_trusted_hosts in config.json.
+    // Look up this host in the trusted-host list.
     //
     // IDN note (S5): comparison is ASCII-case-insensitive only. Hosts stored as
     // Unicode (e.g. "mygïtea.example") and their punycode equivalents
@@ -257,17 +256,26 @@ async fn forgejo_api_call(
     // `validate_forgejo_host` already rejects non-ASCII input, so this is not
     // exploitable — but it means a user who manually edits the config with
     // a Unicode host must use the exact same form in the URL.
-    if !config.forgejo_token.is_empty()
-        && !config
-            .forgejo_trusted_hosts
-            .iter()
-            .any(|h| h.eq_ignore_ascii_case(host_url))
-    {
+    let host_entry = config
+        .forgejo_trusted_hosts
+        .iter()
+        .enumerate()
+        .find(|(_, h)| h.host.eq_ignore_ascii_case(host_url));
+
+    // Reject hosts not on the user-managed allowlist to prevent token exfiltration.
+    // To add a new Forgejo host, add it to forgejo_trusted_hosts in Settings.
+    if host_entry.is_none() {
         return Err(format!(
-            "Host '{}' is not in forgejo_trusted_hosts. Add it to config.json to allow sending your token there.",
+            "Host '{}' is not in the Forgejo trusted-host list. Add it in Settings → Forgejo to allow requests to this host.",
             host_url
         ));
     }
+
+    // Retrieve the per-host token (if any) by index — same position as the host entry.
+    let token = host_entry
+        .and_then(|(idx, _)| config.forgejo_tokens.get(idx))
+        .map(|s| s.as_str())
+        .unwrap_or("");
 
     // Forgejo and Gitea share the same API surface.
     // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
@@ -278,8 +286,8 @@ async fn forgejo_api_call(
 
     let mut request = http_client().get(&api_url);
 
-    if !config.forgejo_token.is_empty() {
-        request = request.header("Authorization", format!("token {}", config.forgejo_token));
+    if !token.is_empty() {
+        request = request.header("Authorization", format!("token {}", token));
     }
 
     let response = send_with_retry(request)
