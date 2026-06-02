@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this app does
 
-Upstream Releases Tracker is a Tauri 2.x desktop app that lets users track the latest release tags from GitHub, Forgejo/Gitea, and (future) GitLab repositories, and compare them against the version installed on their system.
+Upstream Releases Tracker is a Tauri 2.x desktop app that lets users track the latest release tags from GitHub, Forgejo/Gitea, and GitLab repositories, and compare them against the version installed on their system.
 
 ## Development commands
 
@@ -40,7 +40,7 @@ npm run dev
 The workspace has three crates:
 
 - **`tracker_libs/`** — shared types only: `Config`, `RepoData`, `ForgeKind`. No I/O or async. Both the Tauri backend and the root crate depend on this.
-- **`src-tauri/`** — the Tauri backend. Exposes six Tauri commands to the frontend and owns all I/O and HTTP logic.
+- **`src-tauri/`** — the Tauri backend. Exposes Tauri commands to the frontend and owns all I/O and HTTP logic.
 
 ### Backend modules (`src-tauri/src/`)
 
@@ -52,7 +52,6 @@ The workspace has three crates:
 | `config_handler.rs` | Read/write `config.json`; creates a default template on first run |
 | `json_handler.rs` | Thin wrapper for serde_json file I/O |
 | `migration.rs` | Idempotent schema migrations for `repos.json` and `config.json`; runs at every startup |
-| `helper.rs` | Thin bridge so `lib.rs` can call `ConfigHandler` without importing it directly |
 
 ### Frontend (root)
 
@@ -61,11 +60,12 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 ### Data files (Linux paths)
 
 - Repos: `~/.local/share/upstream-releases-tracker/data/repos.json`
-- Config: `~/.config/upstream-releases-tracker/config.json` — API tokens live here; created automatically with empty values on first run.
+- Config: `~/.config/upstream-releases-tracker/config.json` — endpoint metadata only; created automatically with empty values on first run. API tokens are stored in the Stronghold vault (not config.json).
 
 ### Tauri commands
 
-`get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `mark_as_updated` — all defined in `src-tauri/src/lib.rs`.
+All defined in `src-tauri/src/lib.rs`:
+`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `update_api_keys`, `get_vault_key`, `delete_vault_file`, `get_logs`.
 
 ### Adding a new forge
 
@@ -80,3 +80,10 @@ GitLab is implemented as of 3.4.0. Subgroup URL support (≥3 path segments) was
 ### URL validation
 
 `isValidRepoUrl` in `app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with at least two path segments (`host/owner/repo`). GitLab subgroup URLs with additional segments (`host/group/subgroup/project`) are valid; `parse_url` joins all segments except the last as the owner.
+
+### Security notes
+
+- **CSP `'unsafe-inline'` in `style-src`** (S6): required by the `oat` UI library which injects inline styles for theming. Cannot be removed without upstream support for nonce-based styles. Tauri's schema validator does not allow comments in `tauri.conf.json`, so the rationale lives here.
+- **Vault key in JS** (S3): `get_vault_key` returns the 32-byte hex key to JS so Stronghold can call `load()`. The key briefly lives in the JS heap; the derived Argon2id vault key never leaves Rust. See the `get_vault_key` docstring for the full threat-model note.
+- **`delete_vault_file` requires `confirm: "yes"`** (S4): prevents accidental invocation since losing the vault loses all stored API keys.
+- **Forgejo trusted-host comparison** (S5): ASCII-case-insensitive only — Unicode hostnames and their punycode equivalents are treated as different entries. `validate_forgejo_host` already rejects non-ASCII input so this is not exploitable in practice.
