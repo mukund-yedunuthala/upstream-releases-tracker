@@ -732,3 +732,220 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use tracker_libs::{ForgeKind, RepoData};
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    fn tmp_path() -> NamedTempFile {
+        let f = NamedTempFile::new().unwrap();
+        std::fs::remove_file(f.path()).ok();
+        f
+    }
+
+    fn sample_repo(tag: &str) -> RepoData {
+        RepoData {
+            owner: "owner".to_string(),
+            repo_name: "repo".to_string(),
+            host_url: "github.com".to_string(),
+            host_kind: ForgeKind::GitHub,
+            latest_release: tag.to_string(),
+            system_version: String::new(),
+            release_notes: String::new(),
+        }
+    }
+
+    const URL_A: &str = "https://github.com/owner/repo";
+    const URL_B: &str = "https://github.com/owner/other";
+
+    // ── validate_endpoint_url ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_endpoint_url_accepts_valid_https() {
+        assert!(validate_endpoint_url("https://api.github.com/repos/", "github").is_ok());
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_http() {
+        let err = validate_endpoint_url("http://api.github.com/repos/", "github").unwrap_err();
+        assert!(err.contains("HTTPS"), "expected HTTPS mention, got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_unparseable() {
+        let err = validate_endpoint_url("not a url", "github").unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_no_host() {
+        let err = validate_endpoint_url("https://", "github").unwrap_err();
+        assert!(err.contains("no host") || err.contains("host"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_too_long() {
+        let url = format!("https://a.com/{}", "b".repeat(2049));
+        let err = validate_endpoint_url(&url, "github").unwrap_err();
+        assert!(err.contains("2048"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_accepts_exactly_2048_chars() {
+        // Build: "https://a.com/" + padding to hit exactly 2048 total chars.
+        let prefix = "https://a.com/";
+        let padding = "b".repeat(2048 - prefix.len());
+        let url = format!("{}{}", prefix, padding);
+        assert_eq!(url.len(), 2048);
+        assert!(validate_endpoint_url(&url, "github").is_ok());
+    }
+
+    // ── validate_forgejo_host ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_forgejo_host_accepts_plain_hostname() {
+        assert!(validate_forgejo_host("codeberg.org").is_ok());
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_empty() {
+        assert!(validate_forgejo_host("").is_err());
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_too_long() {
+        let host = "a".repeat(254);
+        let err = validate_forgejo_host(&host).unwrap_err();
+        assert!(err.contains("253"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_non_ascii() {
+        let err = validate_forgejo_host("mygïtea.example").unwrap_err();
+        assert!(err.contains("ASCII"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_slash() {
+        let err = validate_forgejo_host("example.com/path").unwrap_err();
+        assert!(
+            err.contains("scheme or path") || err.contains("path"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_colon() {
+        let err = validate_forgejo_host("example.com:3000").unwrap_err();
+        assert!(!err.is_empty(), "got: {err}");
+    }
+
+    // ── sanitize_token ────────────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_token_accepts_clean_token() {
+        assert_eq!(sanitize_token("ghp_abc123", "github").unwrap(), "ghp_abc123");
+    }
+
+    #[test]
+    fn sanitize_token_trims_whitespace() {
+        assert_eq!(sanitize_token("  ghp_abc  ", "github").unwrap(), "ghp_abc");
+    }
+
+    #[test]
+    fn sanitize_token_rejects_too_long() {
+        let token = "x".repeat(4097);
+        let err = sanitize_token(&token, "github").unwrap_err();
+        assert!(err.contains("4096"), "got: {err}");
+    }
+
+    #[test]
+    fn sanitize_token_rejects_control_characters() {
+        let err = sanitize_token("ghp_\x01abc", "github").unwrap_err();
+        assert!(err.contains("control"), "got: {err}");
+    }
+
+    #[test]
+    fn sanitize_token_accepts_empty_string() {
+        assert_eq!(sanitize_token("", "github").unwrap(), "");
+    }
+
+    // ── merge_refresh_result ──────────────────────────────────────────────────
+
+    #[test]
+    fn merge_refresh_result_succeeds_when_repo_exists() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_fails_when_repo_was_deleted() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        app_content_handler::del_repo(path, URL_A).unwrap();
+        let err = merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap_err();
+        assert!(
+            err.to_string().contains("removed during refresh"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_refresh_result_does_not_modify_other_repos() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        app_content_handler::add_repo(path, URL_B.to_string(), sample_repo("v9.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_B].latest_release, "v9.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_overwrites_existing_data() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_fails_when_file_absent_and_url_not_found() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        // File does not exist → read_repos returns empty map → URL is absent.
+        let err = merge_refresh_result(path, URL_A, sample_repo("v1.0")).unwrap_err();
+        assert!(
+            err.to_string().contains("removed during refresh"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_refresh_result_preserves_system_version() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        let mut initial = sample_repo("v1.0");
+        initial.system_version = "v1.0".to_string();
+        app_content_handler::add_repo(path, URL_A.to_string(), initial).unwrap();
+
+        let mut updated = sample_repo("v2.0");
+        updated.system_version = "v1.0".to_string(); // caller carries it forward
+        merge_refresh_result(path, URL_A, updated).unwrap();
+
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].system_version, "v1.0");
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
+}

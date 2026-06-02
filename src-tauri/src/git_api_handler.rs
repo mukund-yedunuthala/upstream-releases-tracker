@@ -421,8 +421,11 @@ impl GitHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_release_notes, parse_url};
-    use tracker_libs::ForgeKind;
+    use super::{
+        build_repo_data, extract_release_notes, forgejo_api_call, github_api_call, http_client,
+        parse_url, send_with_retry,
+    };
+    use tracker_libs::{Config, ForgeKind, ForgejoHost};
 
     // --- parse_url ---
 
@@ -583,5 +586,265 @@ mod tests {
                     .cloned()
             });
         assert!(found.is_none());
+    }
+
+    // ── build_repo_data ───────────────────────────────────────────────────────
+
+    #[test]
+    fn build_repo_data_succeeds_with_tag_name() {
+        let json = serde_json::json!({ "tag_name": "v1.2.3", "body": "release notes" });
+        let result = build_repo_data(
+            &json,
+            "owner".to_string(),
+            "repo".to_string(),
+            "github.com".to_string(),
+            ForgeKind::GitHub,
+            String::new(),
+        )
+        .unwrap();
+        assert_eq!(result.latest_release, "v1.2.3");
+        assert_eq!(result.release_notes, "release notes");
+    }
+
+    #[test]
+    fn build_repo_data_fails_when_tag_name_missing() {
+        let json = serde_json::json!({ "body": "notes" });
+        let err = build_repo_data(
+            &json,
+            "owner".to_string(),
+            "repo".to_string(),
+            "github.com".to_string(),
+            ForgeKind::GitHub,
+            String::new(),
+        )
+        .unwrap_err();
+        assert!(err.contains("missing tag_name") || err.contains("tag_name"), "got: {err}");
+    }
+
+    #[test]
+    fn build_repo_data_fails_when_tag_name_is_null() {
+        let json = serde_json::json!({ "tag_name": null, "body": "notes" });
+        let err = build_repo_data(
+            &json,
+            "owner".to_string(),
+            "repo".to_string(),
+            "github.com".to_string(),
+            ForgeKind::GitHub,
+            String::new(),
+        )
+        .unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn build_repo_data_uses_description_for_gitlab() {
+        let json = serde_json::json!({
+            "tag_name": "v1.0",
+            "description": "GitLab notes",
+            "body": "ignored"
+        });
+        let result = build_repo_data(
+            &json,
+            "owner".to_string(),
+            "repo".to_string(),
+            "gitlab.com".to_string(),
+            ForgeKind::GitLab,
+            String::new(),
+        )
+        .unwrap();
+        assert_eq!(result.release_notes, "GitLab notes");
+    }
+
+    // ── send_with_retry ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn send_with_retry_returns_200_immediately() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/test")
+            .with_status(200)
+            .with_body(r#"{"tag_name":"v1.0"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = format!("{}/test", server.url());
+        let builder = http_client().get(&url);
+        let resp = send_with_retry(builder).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+        mock.assert_async().await;
+    }
+
+    // This test sleeps for ~1 second due to the retry backoff — marked #[ignore]
+    // so it doesn't slow down the default `cargo test` run.
+    // Run explicitly with: cargo test -- --ignored send_with_retry_retries_on_500
+    #[tokio::test]
+    #[ignore]
+    async fn send_with_retry_retries_on_500_succeeds_on_second() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/retry")
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let mock2 = server
+            .mock("GET", "/retry")
+            .with_status(200)
+            .with_body(r#"{"tag_name":"v2.0"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = format!("{}/retry", server.url());
+        let builder = http_client().get(&url);
+        let resp = send_with_retry(builder).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+        mock.assert_async().await;
+        mock2.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn send_with_retry_does_not_retry_on_4xx() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/notfound")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = format!("{}/notfound", server.url());
+        let builder = http_client().get(&url);
+        let resp = send_with_retry(builder).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 404);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn send_with_retry_passes_through_401() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/unauth")
+            .with_status(401)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = format!("{}/unauth", server.url());
+        let builder = http_client().get(&url);
+        let resp = send_with_retry(builder).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 401);
+        mock.assert_async().await;
+    }
+
+    // ── github_api_call ───────────────────────────────────────────────────────
+
+    fn sample_config_for_mock(base_url: &str) -> Config {
+        let mut config = Config::new();
+        // Point at mockito server; no token so the api.github.com guard doesn't fire.
+        config.github_endpoint = format!("{}/", base_url);
+        config
+    }
+
+    #[tokio::test]
+    async fn github_api_call_returns_parsed_json_on_200() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/owner/repo/releases/latest")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"tag_name":"v2.0","body":""}"#)
+            .create_async()
+            .await;
+
+        let config = sample_config_for_mock(&server.url());
+        let json = github_api_call(&config, "owner", "repo").await.unwrap();
+        assert_eq!(json["tag_name"], "v2.0");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn github_api_call_returns_descriptive_error_on_404() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/owner/repo/releases/latest")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let config = sample_config_for_mock(&server.url());
+        let err = github_api_call(&config, "owner", "repo").await.unwrap_err();
+        assert!(err.contains("No releases found"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn github_api_call_returns_error_on_403() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/owner/repo/releases/latest")
+            .with_status(403)
+            .create_async()
+            .await;
+
+        let config = sample_config_for_mock(&server.url());
+        let err = github_api_call(&config, "owner", "repo").await.unwrap_err();
+        assert!(err.contains("403"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn github_api_call_rejects_token_for_non_github_host() {
+        let mut server = mockito::Server::new_async().await;
+        // Mock must never be called — the host guard fires before any HTTP.
+        let mock = server
+            .mock("GET", "/owner/repo/releases/latest")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let mut config = sample_config_for_mock(&server.url());
+        config.github_api_key = "ghp_secret".to_string();
+        let err = github_api_call(&config, "owner", "repo").await.unwrap_err();
+        assert!(
+            err.contains("token refused") || err.contains("refused"),
+            "got: {err}"
+        );
+        mock.assert_async().await;
+    }
+
+    // ── forgejo_api_call ──────────────────────────────────────────────────────
+    // forgejo_api_call hardcodes https:// in its URL, so mockito (http only)
+    // cannot intercept the actual HTTP call. Only the trusted-host guard
+    // (which fires before any network I/O) is testable here.
+
+    #[tokio::test]
+    async fn forgejo_api_call_rejects_untrusted_host() {
+        let mut config = Config::new();
+        config.forgejo_trusted_hosts = vec![];
+        config.forgejo_tokens = vec![];
+        let err = forgejo_api_call(&config, "example.com", "owner", "repo")
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("trusted-host") || err.contains("trusted"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn forgejo_api_call_rejects_host_not_in_list() {
+        let mut config = Config::new();
+        config.forgejo_trusted_hosts = vec![ForgejoHost {
+            host: "codeberg.org".to_string(),
+            token_ref: String::new(),
+        }];
+        config.forgejo_tokens = vec![String::new()];
+        let err = forgejo_api_call(&config, "other.example.com", "owner", "repo")
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("trusted-host") || err.contains("trusted"),
+            "got: {err}"
+        );
     }
 }
