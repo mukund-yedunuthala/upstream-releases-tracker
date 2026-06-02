@@ -228,6 +228,7 @@ function buildCard(url, data) {
     card.querySelector(".js-card-notes").textContent = notes;
   } else {
     notesEl.dataset.empty = "";
+    notesEl.querySelector("summary").tabIndex = -1;
   }
 
   if (isUpToDate) {
@@ -984,18 +985,18 @@ settingsSaveBtn.addEventListener("click", async () => {
 });
 
 async function initSettings() {
-  try {
-    await initVault();
-  } catch (e) {
-    console.warn("Stronghold init failed:", e);
-    ot.toast(String(e), "Vault unavailable — API tokens will not persist", {
+  const [vaultErr, endpointErr] = await Promise.all([
+    initVault().then(() => null, (e) => e),
+    initEndpoints().then(() => null, (e) => e),
+  ]);
+  if (vaultErr) {
+    console.warn("Stronghold init failed:", vaultErr);
+    ot.toast(String(vaultErr), "Vault unavailable — API tokens will not persist", {
       variant: "warning",
     });
   }
-  try {
-    await initEndpoints();
-  } catch (e) {
-    console.warn("Store init failed:", e);
+  if (endpointErr) {
+    console.warn("Store init failed:", endpointErr);
   }
   // Load per-host Forgejo tokens now that the host list is ready.
   try {

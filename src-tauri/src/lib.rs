@@ -453,7 +453,7 @@ fn get_vault_key() -> Result<String, String> {
         Ok(stored) => Ok(stored),
         Err(keyring::Error::NoEntry) => {
             let mut bytes = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut bytes);
+            rand::rng().fill_bytes(&mut bytes);
             let encoded: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
             entry
                 .set_password(&encoded)
