@@ -35,6 +35,24 @@ fn datafile_path_string() -> Result<String, String> {
         .map(|s| s.to_string())?)
 }
 
+/// Write a refreshed `RepoData` back into the on-disk store.
+///
+/// Reads the current file, checks the repo still exists (TOCTOU guard),
+/// inserts the updated data, and writes atomically. Returns an error if the
+/// repo was deleted while its HTTP call was in flight.
+fn merge_refresh_result(
+    path: &str,
+    url: &str,
+    new_data: RepoData,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repos = app_content_handler::read_repos(path)?;
+    if !repos.contains_key(url) {
+        return Err(format!("Repo '{}' was removed during refresh", url).into());
+    }
+    repos.insert(url.to_string(), new_data);
+    app_content_handler::write_repos(path, &repos)
+}
+
 // API key fields are runtime-only — they live in Stronghold on disk and in
 // the in-memory Config when populated by the frontend. This ensures we never
 // write them back to config.json when persisting endpoint changes.
@@ -42,7 +60,7 @@ fn scrub_keys(config: &Config) -> Config {
     let mut c = config.clone();
     c.github_api_key = String::new();
     c.gitlab_api_key = String::new();
-    c.forgejo_token = String::new();
+    c.forgejo_tokens = vec![String::new(); c.forgejo_trusted_hosts.len()];
     c
 }
 
@@ -51,8 +69,10 @@ async fn get_repos(
     state: tauri::State<'_, AppState>,
 ) -> Result<BTreeMap<String, RepoData>, String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::read_repos(&state.path)
-        .map_err(|e| format!("Failed to read repos: {}", e))
+    app_content_handler::read_repos(&state.path).map_err(|e| {
+        log::error!("get_repos failed: {}", e);
+        format!("Failed to read repos: {}", e)
+    })
 }
 
 #[tauri::command]
@@ -61,8 +81,10 @@ async fn delete_repo(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::del_repo(&state.path, &url)
-        .map_err(|e| format!("Failed to delete repo {}: {}", url, e))
+    app_content_handler::del_repo(&state.path, &url).map_err(|e| {
+        log::error!("delete_repo failed for {}: {}", url, e);
+        format!("Failed to delete repo {}: {}", url, e)
+    })
 }
 
 #[tauri::command]
@@ -86,16 +108,17 @@ async fn refresh_repo(
     let result = GitHandler {}
         .refresh_repo(&config_snapshot, &repo)
         .await
-        .map_err(|e| format!("Failed to refresh repo: {}", e))?;
+        .map_err(|e| {
+            log::error!("refresh_repo HTTP failed for {}: {}", url, e);
+            format!("Failed to refresh repo: {}", e)
+        })?;
 
-    // 3. Write back under lock.
+    // 3. Write back under lock — but only if the repo wasn't deleted while we
+    //    were waiting for the HTTP response (guards against TOCTOU with delete).
     {
         let _guard = state.lock.lock().await;
-        let mut all_repos = app_content_handler::read_repos(&state.path)
-            .map_err(|e| format!("Failed to read repos for write: {}", e))?;
-        all_repos.insert(url, result);
-        app_content_handler::write_repos(&state.path, &all_repos)
-            .map_err(|e| format!("Failed to write repos: {}", e))?;
+        merge_refresh_result(&state.path, &url, result)
+            .map_err(|e| format!("Failed to write refreshed repo: {}", e))?;
     }
 
     Ok(())
@@ -104,21 +127,25 @@ async fn refresh_repo(
 #[tauri::command]
 async fn add_repo(
     url: String,
-    host: String,
     forge: ForgeKind,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     // HTTP call first, outside the data lock.
     let config_snapshot = state.config.lock().await.clone();
     let new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, url.clone(), host, forge)
+        .post_request(&config_snapshot, url.clone(), forge)
         .await
-        .map_err(|e| format!("Error adding repository: {}", e))?;
+        .map_err(|e| {
+            log::error!("add_repo HTTP failed for {}: {}", url, e);
+            format!("Error adding repository: {}", e)
+        })?;
 
     // Write under the lock.
     let _guard = state.lock.lock().await;
-    app_content_handler::add_repo(&state.path, url, new_repo_data)
-        .map_err(|e| format!("Failed to persist new repo: {}", e))?;
+    app_content_handler::add_repo(&state.path, url, new_repo_data).map_err(|e| {
+        log::error!("add_repo persist failed: {}", e);
+        format!("Failed to persist new repo: {}", e)
+    })?;
 
     Ok(())
 }
@@ -127,7 +154,6 @@ async fn add_repo(
 async fn edit_repo(
     old_url: String,
     new_url: String,
-    host: String,
     forge: ForgeKind,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
@@ -145,17 +171,22 @@ async fn edit_repo(
     // 2. HTTP call for the new URL — no lock held.
     let config_snapshot = state.config.lock().await.clone();
     let mut new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, new_url.clone(), host, forge)
+        .post_request(&config_snapshot, new_url.clone(), forge)
         .await
-        .map_err(|e| format!("Error fetching new repo data: {}", e))?;
+        .map_err(|e| {
+            log::error!("edit_repo HTTP failed for {}: {}", new_url, e);
+            format!("Error fetching new repo data: {}", e)
+        })?;
 
     // Carry system_version forward so the user's tracking state is not lost.
     new_repo_data.system_version = old_system_version;
 
     // 3. Atomically replace old_url with new_url under lock.
     let _guard = state.lock.lock().await;
-    app_content_handler::edit_repo(&state.path, &old_url, new_url, new_repo_data)
-        .map_err(|e| format!("Failed to update repo: {}", e))
+    app_content_handler::edit_repo(&state.path, &old_url, new_url, new_repo_data).map_err(|e| {
+        log::error!("edit_repo persist failed: {}", e);
+        format!("Failed to update repo: {}", e)
+    })
 }
 
 #[tauri::command]
@@ -164,8 +195,10 @@ async fn mark_as_updated(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let _guard = state.lock.lock().await;
-    app_content_handler::upd_repo_status(&state.path, &url)
-        .map_err(|e| format!("Failed to mark repo as updated {}: {}", url, e))
+    app_content_handler::upd_repo_status(&state.path, &url).map_err(|e| {
+        log::error!("mark_as_updated failed for {}: {}", url, e);
+        format!("Failed to mark repo as updated {}: {}", url, e)
+    })
 }
 
 #[derive(Serialize)]
@@ -193,19 +226,22 @@ async fn refresh_all(
     }
 
     // 2. Parallel HTTP calls — no lock held during network I/O.
+    //    buffer_unordered(8) caps concurrent requests so a large list doesn't
+    //    DoS a small Forgejo host or exhaust the GitHub rate-limit budget.
     let config = state.config.lock().await.clone();
 
-    let handles: Vec<_> = repos_snapshot
-        .iter()
+    use futures::stream::{self, StreamExt};
+    let tasks: Vec<_> = repos_snapshot
+        .into_iter()
         .map(|(url, repo)| {
-            let url = url.clone();
-            let repo = repo.clone();
             let config = config.clone();
-            tokio::task::spawn(async move {
-                (url, GitHandler {}.refresh_repo(&config, &repo).await)
-            })
+            async move { (url, GitHandler {}.refresh_repo(&config, &repo).await) }
         })
         .collect();
+    let results: Vec<_> = stream::iter(tasks)
+        .buffer_unordered(8)
+        .collect()
+        .await;
 
     // 3. Collect results, re-read for any concurrent changes, write once.
     let _guard = state.lock.lock().await;
@@ -215,17 +251,19 @@ async fn refresh_all(
     let mut ok_urls: Vec<String> = Vec::new();
     let mut err_pairs: Vec<(String, String)> = Vec::new();
 
-    for handle in handles {
-        match handle.await {
-            Ok((url, Ok(new_data))) => {
-                all_repos.insert(url.clone(), new_data);
-                ok_urls.push(url);
-            }
-            Ok((url, Err(e))) => {
-                err_pairs.push((url, e));
+    for (url, outcome) in results {
+        match outcome {
+            Ok(new_data) => {
+                // Only update if the repo still exists — silently skip repos
+                // deleted while their HTTP call was in flight (TOCTOU guard).
+                if all_repos.contains_key(&url) {
+                    all_repos.insert(url.clone(), new_data);
+                    ok_urls.push(url);
+                }
             }
             Err(e) => {
-                err_pairs.push(("(unknown)".to_string(), e.to_string()));
+                log::error!("refresh_all: failed to refresh {}: {}", url, e);
+                err_pairs.push((url, e));
             }
         }
     }
@@ -245,7 +283,7 @@ async fn refresh_all(
 struct Endpoints {
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<String>,
+    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
 }
 
 #[tauri::command]
@@ -303,18 +341,36 @@ async fn update_endpoints(
     state: tauri::State<'_, AppState>,
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<String>,
+    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
 ) -> Result<(), String> {
     // Validate inputs before touching in-memory state.
     validate_endpoint_url(&github_endpoint, "github_endpoint")?;
     validate_endpoint_url(&gitlab_endpoint, "gitlab_endpoint")?;
-    for host in &forgejo_trusted_hosts {
-        validate_forgejo_host(host)?;
+    for entry in &forgejo_trusted_hosts {
+        validate_forgejo_host(&entry.host)?;
+        // token_ref must be either empty or match the expected naming scheme.
+        // We only enforce it is not excessively long and has no control chars.
+        if entry.token_ref.len() > 512 {
+            return Err(format!(
+                "token_ref for host '{}' exceeds 512 characters",
+                entry.host
+            ));
+        }
+        if entry.token_ref.chars().any(|c| c.is_ascii_control()) {
+            return Err(format!(
+                "token_ref for host '{}' contains control characters",
+                entry.host
+            ));
+        }
     }
 
     // Update in-memory config; only write to disk when something changed.
     let (to_persist, changed) = {
         let mut cfg = state.config.lock().await;
+        // Resize forgejo_tokens to match the new host list, preserving tokens
+        // for hosts that remain and adding empty strings for new entries.
+        let new_len = forgejo_trusted_hosts.len();
+        cfg.forgejo_tokens.resize(new_len, String::new());
         let changed = cfg.github_endpoint != github_endpoint
             || cfg.gitlab_endpoint != gitlab_endpoint
             || cfg.forgejo_trusted_hosts != forgejo_trusted_hosts;
@@ -342,20 +398,27 @@ fn sanitize_token(token: &str, field: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+// forgejo_tokens: per-host PATs in the same order as forgejo_trusted_hosts.
+// An empty string at position i means no token for that host (unauthenticated).
 #[tauri::command]
 async fn update_api_keys(
     state: tauri::State<'_, AppState>,
     github_api_key: String,
     gitlab_api_key: String,
-    forgejo_token: String,
+    forgejo_tokens: Vec<String>,
 ) -> Result<(), String> {
     let github_api_key = sanitize_token(&github_api_key, "github_api_key")?;
     let gitlab_api_key = sanitize_token(&gitlab_api_key, "gitlab_api_key")?;
-    let forgejo_token = sanitize_token(&forgejo_token, "forgejo_token")?;
+    let forgejo_tokens: Result<Vec<String>, String> = forgejo_tokens
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| sanitize_token(&t, &format!("forgejo_tokens[{}]", i)))
+        .collect();
+    let forgejo_tokens = forgejo_tokens?;
     let mut cfg = state.config.lock().await;
     cfg.github_api_key = github_api_key;
     cfg.gitlab_api_key = gitlab_api_key;
-    cfg.forgejo_token = forgejo_token;
+    cfg.forgejo_tokens = forgejo_tokens;
     Ok(())
 }
 
@@ -364,6 +427,18 @@ async fn update_api_keys(
 /// The string is passed to `Stronghold.load()` in JS, where the stronghold
 /// plugin delivers it to the Argon2id closure as a `&str`. If the keyring is
 /// unavailable the command returns an error so the frontend can surface it.
+///
+/// # Security note — vault key in JS process memory
+///
+/// The Stronghold plugin requires the raw key material to be passed from Rust
+/// to JavaScript at each startup (it is the password argument to `load()`).
+/// This means the 32-byte hex string briefly lives in the JS heap and in the
+/// IPC channel. Within Tauri's threat model this is acceptable: the webview
+/// renderer and the Rust core share the same trust boundary on a single-user
+/// desktop, and the value is never persisted by JS (no localStorage, no
+/// indexedDB). The real secret — the Argon2id-derived vault key — never
+/// leaves the Stronghold plugin's Rust code. Users who need to reason about
+/// this should consult the Stronghold security model documentation.
 #[tauri::command]
 fn get_vault_key() -> Result<String, String> {
     use rand::RngCore;
@@ -378,7 +453,7 @@ fn get_vault_key() -> Result<String, String> {
         Ok(stored) => Ok(stored),
         Err(keyring::Error::NoEntry) => {
             let mut bytes = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut bytes);
+            rand::rng().fill_bytes(&mut bytes);
             let encoded: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
             entry
                 .set_password(&encoded)
@@ -396,8 +471,16 @@ fn get_vault_key() -> Result<String, String> {
 /// Called by the frontend when Stronghold.load() fails with an existing
 /// vault.hold (e.g. after upgrading from a build where the keyring mock
 /// was used and the key was never persisted to the OS credential store).
+///
+/// Requires `confirm == "yes"` to prevent accidental invocation — this
+/// is a destructive operation (all stored API keys are lost).
 #[tauri::command]
-fn delete_vault_file(app: tauri::AppHandle) -> Result<(), String> {
+fn delete_vault_file(app: tauri::AppHandle, confirm: String) -> Result<(), String> {
+    if confirm != "yes" {
+        return Err(
+            "delete_vault_file requires confirm=\"yes\" to prevent accidental data loss".to_string(),
+        );
+    }
     let vault_path = app
         .path()
         .app_local_data_dir()
@@ -410,8 +493,34 @@ fn delete_vault_file(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Returned by `get_logs`. Contains the new log lines and the byte offset at
+/// the end of the last read so the caller can pass it back as `after_bytes` on
+/// the next call to receive only new entries (F9 incremental reads).
+#[derive(Serialize)]
+struct LogChunk {
+    lines: Vec<String>,
+    /// Byte offset after the last byte that was read.  Pass this back as
+    /// `after_bytes` on the next call to receive only new log entries.
+    next_offset: u64,
+}
+
+/// Returns log lines from the most-recently-modified `.log` file.
+///
+/// - `limit`: maximum number of lines to return (capped at 1000).
+/// - `after_bytes`: if `Some(n)`, only read from byte offset `n` onwards
+///   (incremental mode — pass the `next_offset` from the previous response).
+///   If `None`, returns the tail window of the full file.
+///
+/// The returned `next_offset` should be persisted by the caller between
+/// invocations.  If the log file has been rotated (new `next_offset` would be
+/// smaller than the supplied `after_bytes`), the command automatically falls
+/// back to a full read of the new file.
 #[tauri::command]
-async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, String> {
+async fn get_logs(
+    app: tauri::AppHandle,
+    limit: usize,
+    after_bytes: Option<u64>,
+) -> Result<LogChunk, String> {
     use std::io::{BufRead, Read, Seek, SeekFrom};
 
     const MAX_READ_BYTES: u64 = 262_144; // 256 KiB tail window
@@ -424,7 +533,7 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
         .map_err(|e| format!("Could not get log dir: {}", e))?;
 
     if !log_dir.exists() {
-        return Ok(vec![]);
+        return Ok(LogChunk { lines: vec![], next_offset: 0 });
     }
 
     // Pick the most recently modified .log file in the log dir.
@@ -448,7 +557,7 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
     }
 
     let Some((path, _)) = latest else {
-        return Ok(vec![]);
+        return Ok(LogChunk { lines: vec![], next_offset: 0 });
     };
 
     let file_len = std::fs::metadata(&path)
@@ -458,7 +567,32 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
     let mut file = std::fs::File::open(&path)
         .map_err(|e| format!("Failed to open log file: {}", e))?;
 
-    // For large files seek to the tail window; for small files read from start.
+    // Incremental mode: if the caller supplied a byte offset and the file has
+    // grown since then, seek to that offset and return only new lines.
+    // If the offset is >= file_len the file hasn't grown; return nothing.
+    // If the offset > file_len the file was rotated; fall through to full read.
+    if let Some(offset) = after_bytes {
+        if offset < file_len {
+            file.seek(SeekFrom::Start(offset))
+                .map_err(|e| format!("Failed to seek log file: {}", e))?;
+            let mut buf = String::new();
+            std::io::BufReader::new(&mut file)
+                .read_to_string(&mut buf)
+                .map_err(|e| format!("Failed to read log file: {}", e))?;
+            let all_lines: Vec<&str> = buf.lines().collect();
+            let start = all_lines.len().saturating_sub(limit);
+            return Ok(LogChunk {
+                lines: all_lines[start..].iter().map(|s| s.to_string()).collect(),
+                next_offset: file_len,
+            });
+        } else if offset == file_len {
+            // No new data.
+            return Ok(LogChunk { lines: vec![], next_offset: file_len });
+        }
+        // offset > file_len → rotation detected, fall through to full read.
+    }
+
+    // Full read: tail the last MAX_READ_BYTES of the file.
     if file_len > MAX_READ_BYTES {
         file.seek(SeekFrom::End(-(MAX_READ_BYTES as i64)))
             .map_err(|e| format!("Failed to seek log file: {}", e))?;
@@ -474,7 +608,10 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
             .map_err(|e| format!("Failed to read log file: {}", e))?;
         let lines: Vec<&str> = buf.lines().collect();
         let start = lines.len().saturating_sub(limit);
-        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+        Ok(LogChunk {
+            lines: lines[start..].iter().map(|s| s.to_string()).collect(),
+            next_offset: file_len,
+        })
     } else {
         let mut buf = String::new();
         std::io::BufReader::new(file)
@@ -482,7 +619,10 @@ async fn get_logs(app: tauri::AppHandle, limit: usize) -> Result<Vec<String>, St
             .map_err(|e| format!("Failed to read log file: {}", e))?;
         let lines: Vec<&str> = buf.lines().collect();
         let start = lines.len().saturating_sub(limit);
-        Ok(lines[start..].iter().map(|s| s.to_string()).collect())
+        Ok(LogChunk {
+            lines: lines[start..].iter().map(|s| s.to_string()).collect(),
+            next_offset: file_len,
+        })
     }
 }
 
@@ -516,6 +656,42 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .max_file_size(2_097_152)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                // Emit newline-delimited JSON so logs are machine-parseable (O3).
+                // Each entry: {"ts":<unix_ms>,"level":"INFO","target":"...","msg":"..."}
+                // ts is milliseconds since the Unix epoch (UTC).
+                .format(|out, message, record| {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    // Escape the message and target so they are valid JSON strings.
+                    // We only escape the characters that are illegal inside a JSON
+                    // string: double-quote, backslash, and ASCII control characters.
+                    let escape = |s: &str| -> String {
+                        let mut out = String::with_capacity(s.len() + 2);
+                        for c in s.chars() {
+                            match c {
+                                '"' => out.push_str("\\\""),
+                                '\\' => out.push_str("\\\\"),
+                                '\n' => out.push_str("\\n"),
+                                '\r' => out.push_str("\\r"),
+                                '\t' => out.push_str("\\t"),
+                                c if (c as u32) < 0x20 => {
+                                    out.push_str(&format!("\\u{:04x}", c as u32));
+                                }
+                                c => out.push(c),
+                            }
+                        }
+                        out
+                    };
+                    out.finish(format_args!(
+                        "{{\"ts\":{},\"level\":\"{}\",\"target\":\"{}\",\"msg\":\"{}\"}}",
+                        ts,
+                        record.level(),
+                        escape(record.target()),
+                        escape(&message.to_string()),
+                    ))
+                })
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
@@ -555,4 +731,221 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use tracker_libs::{ForgeKind, RepoData};
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    fn tmp_path() -> NamedTempFile {
+        let f = NamedTempFile::new().unwrap();
+        std::fs::remove_file(f.path()).ok();
+        f
+    }
+
+    fn sample_repo(tag: &str) -> RepoData {
+        RepoData {
+            owner: "owner".to_string(),
+            repo_name: "repo".to_string(),
+            host_url: "github.com".to_string(),
+            host_kind: ForgeKind::GitHub,
+            latest_release: tag.to_string(),
+            system_version: String::new(),
+            release_notes: String::new(),
+        }
+    }
+
+    const URL_A: &str = "https://github.com/owner/repo";
+    const URL_B: &str = "https://github.com/owner/other";
+
+    // ── validate_endpoint_url ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_endpoint_url_accepts_valid_https() {
+        assert!(validate_endpoint_url("https://api.github.com/repos/", "github").is_ok());
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_http() {
+        let err = validate_endpoint_url("http://api.github.com/repos/", "github").unwrap_err();
+        assert!(err.contains("HTTPS"), "expected HTTPS mention, got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_unparseable() {
+        let err = validate_endpoint_url("not a url", "github").unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_no_host() {
+        let err = validate_endpoint_url("https://", "github").unwrap_err();
+        assert!(err.contains("no host") || err.contains("host"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_rejects_too_long() {
+        let url = format!("https://a.com/{}", "b".repeat(2049));
+        let err = validate_endpoint_url(&url, "github").unwrap_err();
+        assert!(err.contains("2048"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_endpoint_url_accepts_exactly_2048_chars() {
+        // Build: "https://a.com/" + padding to hit exactly 2048 total chars.
+        let prefix = "https://a.com/";
+        let padding = "b".repeat(2048 - prefix.len());
+        let url = format!("{}{}", prefix, padding);
+        assert_eq!(url.len(), 2048);
+        assert!(validate_endpoint_url(&url, "github").is_ok());
+    }
+
+    // ── validate_forgejo_host ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_forgejo_host_accepts_plain_hostname() {
+        assert!(validate_forgejo_host("codeberg.org").is_ok());
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_empty() {
+        assert!(validate_forgejo_host("").is_err());
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_too_long() {
+        let host = "a".repeat(254);
+        let err = validate_forgejo_host(&host).unwrap_err();
+        assert!(err.contains("253"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_non_ascii() {
+        let err = validate_forgejo_host("mygïtea.example").unwrap_err();
+        assert!(err.contains("ASCII"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_slash() {
+        let err = validate_forgejo_host("example.com/path").unwrap_err();
+        assert!(
+            err.contains("scheme or path") || err.contains("path"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_forgejo_host_rejects_colon() {
+        let err = validate_forgejo_host("example.com:3000").unwrap_err();
+        assert!(!err.is_empty(), "got: {err}");
+    }
+
+    // ── sanitize_token ────────────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_token_accepts_clean_token() {
+        assert_eq!(sanitize_token("ghp_abc123", "github").unwrap(), "ghp_abc123");
+    }
+
+    #[test]
+    fn sanitize_token_trims_whitespace() {
+        assert_eq!(sanitize_token("  ghp_abc  ", "github").unwrap(), "ghp_abc");
+    }
+
+    #[test]
+    fn sanitize_token_rejects_too_long() {
+        let token = "x".repeat(4097);
+        let err = sanitize_token(&token, "github").unwrap_err();
+        assert!(err.contains("4096"), "got: {err}");
+    }
+
+    #[test]
+    fn sanitize_token_rejects_control_characters() {
+        let err = sanitize_token("ghp_\x01abc", "github").unwrap_err();
+        assert!(err.contains("control"), "got: {err}");
+    }
+
+    #[test]
+    fn sanitize_token_accepts_empty_string() {
+        assert_eq!(sanitize_token("", "github").unwrap(), "");
+    }
+
+    // ── merge_refresh_result ──────────────────────────────────────────────────
+
+    #[test]
+    fn merge_refresh_result_succeeds_when_repo_exists() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_fails_when_repo_was_deleted() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        app_content_handler::del_repo(path, URL_A).unwrap();
+        let err = merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap_err();
+        assert!(
+            err.to_string().contains("removed during refresh"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_refresh_result_does_not_modify_other_repos() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        app_content_handler::add_repo(path, URL_B.to_string(), sample_repo("v9.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_B].latest_release, "v9.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_overwrites_existing_data() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        app_content_handler::add_repo(path, URL_A.to_string(), sample_repo("v1.0")).unwrap();
+        merge_refresh_result(path, URL_A, sample_repo("v2.0")).unwrap();
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
+
+    #[test]
+    fn merge_refresh_result_fails_when_file_absent_and_url_not_found() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        // File does not exist → read_repos returns empty map → URL is absent.
+        let err = merge_refresh_result(path, URL_A, sample_repo("v1.0")).unwrap_err();
+        assert!(
+            err.to_string().contains("removed during refresh"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_refresh_result_preserves_system_version() {
+        let file = tmp_path();
+        let path = file.path().to_str().unwrap();
+        let mut initial = sample_repo("v1.0");
+        initial.system_version = "v1.0".to_string();
+        app_content_handler::add_repo(path, URL_A.to_string(), initial).unwrap();
+
+        let mut updated = sample_repo("v2.0");
+        updated.system_version = "v1.0".to_string(); // caller carries it forward
+        merge_refresh_result(path, URL_A, updated).unwrap();
+
+        let repos = app_content_handler::read_repos(path).unwrap();
+        assert_eq!(repos[URL_A].system_version, "v1.0");
+        assert_eq!(repos[URL_A].latest_release, "v2.0");
+    }
 }

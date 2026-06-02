@@ -13,7 +13,7 @@ A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repo
 Install frontend dependencies (only needed once or after `package.json` changes):
 
 ```sh
-cd frontend && npm install
+npm install
 ```
 
 Run in dev mode (starts the Vite dev server and the Tauri shell):
@@ -37,7 +37,7 @@ cargo test --workspace
 Frontend-only dev (Vite at `localhost:1420`, no Tauri):
 
 ```sh
-cd frontend && npm run dev
+npm run dev
 ```
 
 ## Architecture
