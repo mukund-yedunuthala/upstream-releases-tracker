@@ -441,7 +441,7 @@ async fn update_api_keys(
 /// this should consult the Stronghold security model documentation.
 #[tauri::command]
 fn get_vault_key() -> Result<String, String> {
-    use rand::RngCore;
+    use rand::Rng;
 
     const SERVICE: &str = "page.mukundyedunuthala.upstream-releases-tracker";
     const ACCOUNT: &str = "vault-key-v2";
