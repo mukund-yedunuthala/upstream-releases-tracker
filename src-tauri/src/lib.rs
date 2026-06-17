@@ -4,18 +4,80 @@ mod git_api_handler;
 mod json_handler;
 mod migration;
 
-use crate::git_api_handler::GitHandler;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tauri::Manager;
-use tracker_libs::{Config, ForgeKind, RepoData};
 
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub enum ForgeKind {
+    GitHub,
+    GitLab,
+    ForgejoCompatible,
+}
+
+impl Default for ForgeKind {
+    fn default() -> Self {
+        ForgeKind::GitHub
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub struct ForgejoHost {
+    pub host: String,
+    pub token_ref: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub struct Config {
+    pub github_api_key: String,
+    pub github_endpoint: String,
+    pub gitlab_api_key: String,
+    pub gitlab_endpoint: String,
+    #[serde(skip)]
+    pub forgejo_tokens: Vec<String>,
+    pub forgejo_trusted_hosts: Vec<ForgejoHost>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config::new()
+    }
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Config {
+            github_api_key: String::new(),
+            github_endpoint: "https://api.github.com/repos/".to_string(),
+            gitlab_api_key: String::new(),
+            gitlab_endpoint: "https://gitlab.com/api/v4/projects/".to_string(),
+            forgejo_tokens: vec![String::new()],
+            forgejo_trusted_hosts: vec![ForgejoHost {
+                host: "codeberg.org".to_string(),
+                token_ref: "forgejo_token:codeberg.org".to_string(),
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub struct RepoData {
+    pub owner: String,
+    pub repo_name: String,
+    pub host_url: String,
+    pub host_kind: ForgeKind,
+    pub latest_release: String,
+    pub system_version: String,
+    #[serde(default)]
+    pub release_notes: String,
+}
 
 /// Shared app state: the data-file path, a mutex that serializes all
 /// read-modify-write operations on it, and the live runtime config. Config
 /// is held under its own mutex so the frontend can update endpoints / push
-/// Stronghold-sourced API keys at runtime without restarting the app.
+/// keyring-sourced API keys at runtime without restarting the app.
 struct AppState {
     path: String,
     lock: tokio::sync::Mutex<()>,
@@ -53,7 +115,7 @@ fn merge_refresh_result(
     app_content_handler::write_repos(path, &repos)
 }
 
-// API key fields are runtime-only — they live in Stronghold on disk and in
+// API key fields are runtime-only — they live in the OS keyring and in
 // the in-memory Config when populated by the frontend. This ensures we never
 // write them back to config.json when persisting endpoint changes.
 fn scrub_keys(config: &Config) -> Config {
@@ -76,10 +138,7 @@ async fn get_repos(
 }
 
 #[tauri::command]
-async fn delete_repo(
-    url: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+async fn delete_repo(url: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.lock.lock().await;
     app_content_handler::del_repo(&state.path, &url).map_err(|e| {
         log::error!("delete_repo failed for {}: {}", url, e);
@@ -88,10 +147,7 @@ async fn delete_repo(
 }
 
 #[tauri::command]
-async fn refresh_repo(
-    url: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+async fn refresh_repo(url: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     // 1. Read the target repo under lock, then release before HTTP.
     let repo = {
         let _guard = state.lock.lock().await;
@@ -105,8 +161,7 @@ async fn refresh_repo(
 
     // 2. Snapshot the config separately, then HTTP call without any lock held.
     let config_snapshot = state.config.lock().await.clone();
-    let result = GitHandler {}
-        .refresh_repo(&config_snapshot, &repo)
+    let result = git_api_handler::refresh_repo(&config_snapshot, &repo)
         .await
         .map_err(|e| {
             log::error!("refresh_repo HTTP failed for {}: {}", url, e);
@@ -132,8 +187,7 @@ async fn add_repo(
 ) -> Result<(), String> {
     // HTTP call first, outside the data lock.
     let config_snapshot = state.config.lock().await.clone();
-    let new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, url.clone(), forge)
+    let new_repo_data = git_api_handler::post_request(&config_snapshot, url.clone(), forge)
         .await
         .map_err(|e| {
             log::error!("add_repo HTTP failed for {}: {}", url, e);
@@ -170,8 +224,7 @@ async fn edit_repo(
 
     // 2. HTTP call for the new URL — no lock held.
     let config_snapshot = state.config.lock().await.clone();
-    let mut new_repo_data = GitHandler {}
-        .post_request(&config_snapshot, new_url.clone(), forge)
+    let mut new_repo_data = git_api_handler::post_request(&config_snapshot, new_url.clone(), forge)
         .await
         .map_err(|e| {
             log::error!("edit_repo HTTP failed for {}: {}", new_url, e);
@@ -190,10 +243,7 @@ async fn edit_repo(
 }
 
 #[tauri::command]
-async fn mark_as_updated(
-    url: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+async fn mark_as_updated(url: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let _guard = state.lock.lock().await;
     app_content_handler::upd_repo_status(&state.path, &url).map_err(|e| {
         log::error!("mark_as_updated failed for {}: {}", url, e);
@@ -208,9 +258,7 @@ struct RefreshAllResult {
 }
 
 #[tauri::command]
-async fn refresh_all(
-    state: tauri::State<'_, AppState>,
-) -> Result<RefreshAllResult, String> {
+async fn refresh_all(state: tauri::State<'_, AppState>) -> Result<RefreshAllResult, String> {
     // 1. Snapshot repos under lock, then release.
     let repos_snapshot = {
         let _guard = state.lock.lock().await;
@@ -235,13 +283,10 @@ async fn refresh_all(
         .into_iter()
         .map(|(url, repo)| {
             let config = config.clone();
-            async move { (url, GitHandler {}.refresh_repo(&config, &repo).await) }
+            async move { (url, git_api_handler::refresh_repo(&config, &repo).await) }
         })
         .collect();
-    let results: Vec<_> = stream::iter(tasks)
-        .buffer_unordered(8)
-        .collect()
-        .await;
+    let results: Vec<_> = stream::iter(tasks).buffer_unordered(8).collect().await;
 
     // 3. Collect results, re-read for any concurrent changes, write once.
     let _guard = state.lock.lock().await;
@@ -283,7 +328,7 @@ async fn refresh_all(
 struct Endpoints {
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
+    forgejo_trusted_hosts: Vec<ForgejoHost>,
 }
 
 #[tauri::command]
@@ -298,9 +343,13 @@ async fn get_endpoints(state: tauri::State<'_, AppState>) -> Result<Endpoints, S
 
 fn validate_endpoint_url(url: &str, field: &str) -> Result<(), String> {
     if url.len() > 2048 {
-        return Err(format!("{} exceeds maximum length of 2048 characters", field));
+        return Err(format!(
+            "{} exceeds maximum length of 2048 characters",
+            field
+        ));
     }
-    let parsed = url::Url::parse(url).map_err(|e| format!("{} is not a valid URL: {}", field, e))?;
+    let parsed =
+        url::Url::parse(url).map_err(|e| format!("{} is not a valid URL: {}", field, e))?;
     if parsed.scheme() != "https" {
         return Err(format!(
             "{} must use HTTPS (got '{}')",
@@ -341,7 +390,7 @@ async fn update_endpoints(
     state: tauri::State<'_, AppState>,
     github_endpoint: String,
     gitlab_endpoint: String,
-    forgejo_trusted_hosts: Vec<tracker_libs::ForgejoHost>,
+    forgejo_trusted_hosts: Vec<ForgejoHost>,
 ) -> Result<(), String> {
     // Validate inputs before touching in-memory state.
     validate_endpoint_url(&github_endpoint, "github_endpoint")?;
@@ -389,13 +438,67 @@ async fn update_endpoints(
 
 fn sanitize_token(token: &str, field: &str) -> Result<String, String> {
     if token.len() > 4096 {
-        return Err(format!("{} exceeds maximum length of 4096 characters", field));
+        return Err(format!(
+            "{} exceeds maximum length of 4096 characters",
+            field
+        ));
     }
     let trimmed = token.trim();
     if trimmed.chars().any(|c| c.is_ascii_control()) {
         return Err(format!("{} contains control characters", field));
     }
     Ok(trimmed.to_string())
+}
+
+#[derive(Serialize)]
+struct ApiKeys {
+    github_api_key: String,
+    gitlab_api_key: String,
+    forgejo_tokens: Vec<String>,
+}
+
+const KEYRING_SERVICE: &str = "page.mukundyedunuthala.upstream-releases-tracker";
+
+fn keyring_account(name: &str) -> String {
+    format!("api-key:{}", name)
+}
+
+fn read_keyring_secret(name: &str) -> Result<String, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_account(name))
+        .map_err(|e| format!("Keyring init failed for {}: {}", name, e))?;
+    match entry.get_password() {
+        Ok(value) => Ok(value),
+        Err(keyring::Error::NoEntry) => Ok(String::new()),
+        Err(e) => Err(format!("Keyring read failed for {}: {}", name, e)),
+    }
+}
+
+fn write_keyring_secret(name: &str, value: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_account(name))
+        .map_err(|e| format!("Keyring init failed for {}: {}", name, e))?;
+    if value.is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("Keyring delete failed for {}: {}", name, e)),
+        }
+    } else {
+        entry
+            .set_password(value)
+            .map_err(|e| format!("Keyring write failed for {}: {}", name, e))
+    }
+}
+
+#[tauri::command]
+async fn get_api_keys(state: tauri::State<'_, AppState>) -> Result<ApiKeys, String> {
+    let hosts = state.config.lock().await.forgejo_trusted_hosts.clone();
+    Ok(ApiKeys {
+        github_api_key: read_keyring_secret("github_api_key")?,
+        gitlab_api_key: read_keyring_secret("gitlab_api_key")?,
+        forgejo_tokens: hosts
+            .iter()
+            .map(|h| read_keyring_secret(&h.token_ref))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
 // forgejo_tokens: per-host PATs in the same order as forgejo_trusted_hosts.
@@ -416,80 +519,14 @@ async fn update_api_keys(
         .collect();
     let forgejo_tokens = forgejo_tokens?;
     let mut cfg = state.config.lock().await;
+    write_keyring_secret("github_api_key", &github_api_key)?;
+    write_keyring_secret("gitlab_api_key", &gitlab_api_key)?;
+    for (entry, token) in cfg.forgejo_trusted_hosts.iter().zip(&forgejo_tokens) {
+        write_keyring_secret(&entry.token_ref, token)?;
+    }
     cfg.github_api_key = github_api_key;
     cfg.gitlab_api_key = gitlab_api_key;
     cfg.forgejo_tokens = forgejo_tokens;
-    Ok(())
-}
-
-/// Returns a per-install random hex-encoded 32-byte key from the OS keyring.
-/// On first call the key is generated and stored; subsequent calls retrieve it.
-/// The string is passed to `Stronghold.load()` in JS, where the stronghold
-/// plugin delivers it to the Argon2id closure as a `&str`. If the keyring is
-/// unavailable the command returns an error so the frontend can surface it.
-///
-/// # Security note — vault key in JS process memory
-///
-/// The Stronghold plugin requires the raw key material to be passed from Rust
-/// to JavaScript at each startup (it is the password argument to `load()`).
-/// This means the 32-byte hex string briefly lives in the JS heap and in the
-/// IPC channel. Within Tauri's threat model this is acceptable: the webview
-/// renderer and the Rust core share the same trust boundary on a single-user
-/// desktop, and the value is never persisted by JS (no localStorage, no
-/// indexedDB). The real secret — the Argon2id-derived vault key — never
-/// leaves the Stronghold plugin's Rust code. Users who need to reason about
-/// this should consult the Stronghold security model documentation.
-#[tauri::command]
-fn get_vault_key() -> Result<String, String> {
-    use rand::Rng;
-
-    const SERVICE: &str = "page.mukundyedunuthala.upstream-releases-tracker";
-    const ACCOUNT: &str = "vault-key-v2";
-
-    let entry = keyring::Entry::new(SERVICE, ACCOUNT)
-        .map_err(|e| format!("Keyring init failed: {}", e))?;
-
-    match entry.get_password() {
-        Ok(stored) => Ok(stored),
-        Err(keyring::Error::NoEntry) => {
-            let mut bytes = [0u8; 32];
-            rand::rng().fill_bytes(&mut bytes);
-            let encoded: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-            entry
-                .set_password(&encoded)
-                .map_err(|e| format!("Failed to store vault key in keyring: {}", e))?;
-            Ok(encoded)
-        }
-        Err(e) => Err(format!(
-            "Keyring access failed — vault unavailable: {}",
-            e
-        )),
-    }
-}
-
-/// Deletes the vault file so a fresh one can be created on next init.
-/// Called by the frontend when Stronghold.load() fails with an existing
-/// vault.hold (e.g. after upgrading from a build where the keyring mock
-/// was used and the key was never persisted to the OS credential store).
-///
-/// Requires `confirm == "yes"` to prevent accidental invocation — this
-/// is a destructive operation (all stored API keys are lost).
-#[tauri::command]
-fn delete_vault_file(app: tauri::AppHandle, confirm: String) -> Result<(), String> {
-    if confirm != "yes" {
-        return Err(
-            "delete_vault_file requires confirm=\"yes\" to prevent accidental data loss".to_string(),
-        );
-    }
-    let vault_path = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| format!("Could not get app local data dir: {}", e))?
-        .join("vault.hold");
-    if vault_path.exists() {
-        std::fs::remove_file(&vault_path)
-            .map_err(|e| format!("Failed to delete vault file: {}", e))?;
-    }
     Ok(())
 }
 
@@ -533,13 +570,16 @@ async fn get_logs(
         .map_err(|e| format!("Could not get log dir: {}", e))?;
 
     if !log_dir.exists() {
-        return Ok(LogChunk { lines: vec![], next_offset: 0 });
+        return Ok(LogChunk {
+            lines: vec![],
+            next_offset: 0,
+        });
     }
 
     // Pick the most recently modified .log file in the log dir.
     let mut latest: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-    let entries = std::fs::read_dir(&log_dir)
-        .map_err(|e| format!("Failed to read log dir: {}", e))?;
+    let entries =
+        std::fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log dir: {}", e))?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("log") {
@@ -557,15 +597,18 @@ async fn get_logs(
     }
 
     let Some((path, _)) = latest else {
-        return Ok(LogChunk { lines: vec![], next_offset: 0 });
+        return Ok(LogChunk {
+            lines: vec![],
+            next_offset: 0,
+        });
     };
 
     let file_len = std::fs::metadata(&path)
         .map_err(|e| format!("Failed to stat log file: {}", e))?
         .len();
 
-    let mut file = std::fs::File::open(&path)
-        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let mut file =
+        std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
 
     // Incremental mode: if the caller supplied a byte offset and the file has
     // grown since then, seek to that offset and return only new lines.
@@ -587,7 +630,10 @@ async fn get_logs(
             });
         } else if offset == file_len {
             // No new data.
-            return Ok(LogChunk { lines: vec![], next_offset: file_len });
+            return Ok(LogChunk {
+                lines: vec![],
+                next_offset: file_len,
+            });
         }
         // offset > file_len → rotation detected, fall through to full read.
     }
@@ -656,64 +702,22 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .max_file_size(2_097_152)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
-                // Emit newline-delimited JSON so logs are machine-parseable (O3).
-                // Each entry: {"ts":<unix_ms>,"level":"INFO","target":"...","msg":"..."}
-                // ts is milliseconds since the Unix epoch (UTC).
                 .format(|out, message, record| {
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis())
                         .unwrap_or(0);
-                    // Escape the message and target so they are valid JSON strings.
-                    // We only escape the characters that are illegal inside a JSON
-                    // string: double-quote, backslash, and ASCII control characters.
-                    let escape = |s: &str| -> String {
-                        let mut out = String::with_capacity(s.len() + 2);
-                        for c in s.chars() {
-                            match c {
-                                '"' => out.push_str("\\\""),
-                                '\\' => out.push_str("\\\\"),
-                                '\n' => out.push_str("\\n"),
-                                '\r' => out.push_str("\\r"),
-                                '\t' => out.push_str("\\t"),
-                                c if (c as u32) < 0x20 => {
-                                    out.push_str(&format!("\\u{:04x}", c as u32));
-                                }
-                                c => out.push(c),
-                            }
-                        }
-                        out
-                    };
-                    out.finish(format_args!(
-                        "{{\"ts\":{},\"level\":\"{}\",\"target\":\"{}\",\"msg\":\"{}\"}}",
-                        ts,
-                        record.level(),
-                        escape(record.target()),
-                        escape(&message.to_string()),
-                    ))
+                    let line = serde_json::json!({
+                        "ts": ts,
+                        "level": record.level().to_string(),
+                        "target": record.target(),
+                        "msg": message.to_string(),
+                    });
+                    out.finish(format_args!("{}", line))
                 })
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_stronghold::Builder::new(|password| {
-                use argon2::{Algorithm, Argon2, Params, Version};
-                // password = 32 random bytes from the OS keyring (get_vault_key).
-                // Argon2id produces a fixed-size 32-byte key with memory cost so
-                // brute-forcing the vault.hold file is expensive even if the raw
-                // keyring bytes are exposed.
-                let params = Params::new(19456, 2, 1, Some(32)).expect("argon2 params");
-                let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-                let salt = b"page.mukundyedunuthala.upstream-releases-tracker:v2";
-                let mut out = vec![0u8; 32];
-                argon
-                    .hash_password_into(password.as_bytes(), salt, &mut out)
-                    .expect("argon2 hash");
-                out
-            })
-            .build(),
-        )
-        .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_repos,
             add_repo,
@@ -724,9 +728,8 @@ pub fn run() {
             mark_as_updated,
             get_endpoints,
             update_endpoints,
+            get_api_keys,
             update_api_keys,
-            get_vault_key,
-            delete_vault_file,
             get_logs,
         ])
         .run(tauri::generate_context!())
@@ -737,7 +740,6 @@ pub fn run() {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
-    use tracker_libs::{ForgeKind, RepoData};
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -784,7 +786,10 @@ mod tests {
     #[test]
     fn validate_endpoint_url_rejects_no_host() {
         let err = validate_endpoint_url("https://", "github").unwrap_err();
-        assert!(err.contains("no host") || err.contains("host"), "got: {err}");
+        assert!(
+            err.contains("no host") || err.contains("host"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -848,7 +853,10 @@ mod tests {
 
     #[test]
     fn sanitize_token_accepts_clean_token() {
-        assert_eq!(sanitize_token("ghp_abc123", "github").unwrap(), "ghp_abc123");
+        assert_eq!(
+            sanitize_token("ghp_abc123", "github").unwrap(),
+            "ghp_abc123"
+        );
     }
 
     #[test]

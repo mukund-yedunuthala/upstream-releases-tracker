@@ -37,10 +37,9 @@ npm run dev
 
 ### Crate layout
 
-The workspace has three crates:
+The workspace has one Rust crate:
 
-- **`tracker_libs/`** — shared types only: `Config`, `RepoData`, `ForgeKind`. No I/O or async. Both the Tauri backend and the root crate depend on this.
-- **`src-tauri/`** — the Tauri backend. Exposes Tauri commands to the frontend and owns all I/O and HTTP logic.
+- **`src-tauri/`** — the Tauri backend. Exposes Tauri commands to the frontend and owns all I/O, HTTP logic, and shared data types.
 
 ### Backend modules (`src-tauri/src/`)
 
@@ -60,18 +59,18 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 ### Data files (Linux paths)
 
 - Repos: `~/.local/share/upstream-releases-tracker/data/repos.json`
-- Config: `~/.config/upstream-releases-tracker/config.json` — endpoint metadata only; created automatically with empty values on first run. API tokens are stored in the Stronghold vault (not config.json).
+- Config: `~/.config/upstream-releases-tracker/config.json` — endpoint metadata only; created automatically with empty values on first run. API tokens are stored in the OS keyring (not config.json).
 
 ### Tauri commands
 
 All defined in `src-tauri/src/lib.rs`:
-`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `update_api_keys`, `get_vault_key`, `delete_vault_file`, `get_logs`.
+`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
 
 ### Adding a new forge
 
-1. Add a variant to `ForgeKind` in `tracker_libs/src/lib.rs`.
+1. Add a variant to `ForgeKind` in `src-tauri/src/lib.rs`.
 2. Add a branch in the `api_call` match in `src-tauri/src/git_api_handler.rs`.
-3. Add a config field to `Config` in `tracker_libs/src/lib.rs` and update `Config::new()`.
+3. Add a config field to `Config` in `src-tauri/src/lib.rs` and update `Config::new()`.
 4. Add a migration in `migration.rs` to backfill the new config field.
 5. Add the option to the `<select>` in `index.html` and the `forgeLabel` switch in `app.js`.
 
@@ -84,6 +83,5 @@ GitLab is implemented as of 3.4.0. Subgroup URL support (≥3 path segments) was
 ### Security notes
 
 - **CSP `'unsafe-inline'` in `style-src`** (S6): required by the `oat` UI library which injects inline styles for theming. Cannot be removed without upstream support for nonce-based styles. Tauri's schema validator does not allow comments in `tauri.conf.json`, so the rationale lives here.
-- **Vault key in JS** (S3): `get_vault_key` returns the 32-byte hex key to JS so Stronghold can call `load()`. The key briefly lives in the JS heap; the derived Argon2id vault key never leaves Rust. See the `get_vault_key` docstring for the full threat-model note.
-- **`delete_vault_file` requires `confirm: "yes"`** (S4): prevents accidental invocation since losing the vault loses all stored API keys.
+- **API tokens in OS keyring**: tokens are read/written only by Rust commands; JS receives token values for the Settings form and never writes them to `config.json`.
 - **Forgejo trusted-host comparison** (S5): ASCII-case-insensitive only — Unicode hostnames and their punycode equivalents are treated as different entries. `validate_forgejo_host` already rejects non-ASCII input so this is not exploitable in practice.

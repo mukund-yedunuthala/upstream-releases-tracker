@@ -44,11 +44,10 @@ npm run dev
 
 | Layer | Tech |
 |---|---|
-| Frontend | Vanilla JS + Vite, no framework. `frontend/app.js` is the single JS file. UI library: `oat` (bundled). |
+| Frontend | Vanilla JS + Vite, no framework. `app.js` is the single JS file. UI library: `oat` (bundled). |
 | Backend | Tauri 2.x (`src-tauri/`). All I/O and HTTP happen in Rust. |
-| Shared types | `tracker_libs/` — `Config`, `RepoData`, `ForgeKind`. No I/O. |
 
-Tauri commands: `get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`.
+Tauri commands: `get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
 
 ## Data locations (Linux)
 

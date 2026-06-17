@@ -1,32 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getVersion } from "@tauri-apps/api/app";
-import { appLocalDataDir, join } from "@tauri-apps/api/path";
-import { Stronghold } from "@tauri-apps/plugin-stronghold";
-import { load as loadStore } from "@tauri-apps/plugin-store";
 import "@knadh/oat/oat.min.css";
 import "@knadh/oat/oat.min.js";
 // State
 let editingUrl = null;
 let deletingUrl = null;
 
-// Settings runtime state — populated at startup, written back on save.
-const VAULT_FILE = "vault.hold";
-const VAULT_CLIENT = "api-keys";
-const STORE_FILE = "endpoints.store.json";
-const VAULT_KEY_NAMES = {
-  github: "github_api_key",
-  gitlab: "gitlab_api_key",
-};
-// Per-host Forgejo vault key convention: "forgejo_token:{host}"
 function forgejoVaultKey(host) {
   return `forgejo_token:${host}`;
 }
-const ENDPOINT_KEY_NAMES = {
-  github: "github_endpoint",
-  gitlab: "gitlab_endpoint",
-  forgejoHosts: "forgejo_trusted_hosts",
-};
 const ENDPOINT_DEFAULTS = {
   github: "https://api.github.com/repos/",
   gitlab: "https://gitlab.com/api/v4/projects/",
@@ -35,12 +18,7 @@ const ENDPOINT_DEFAULTS = {
 };
 
 const settingsState = {
-  stronghold: null,
-  vaultStore: null,
-  endpointStore: null,
   keys: { github: "", gitlab: "" },
-  // Per-host Forgejo tokens — parallel array to endpoints.forgejoHosts.
-  // forgejoTokens[i] is the PAT for endpoints.forgejoHosts[i].
   forgejoTokens: [],
   endpoints: {
     github: ENDPOINT_DEFAULTS.github,
@@ -48,20 +26,6 @@ const settingsState = {
     forgejoHosts: [...ENDPOINT_DEFAULTS.forgejoHosts],
   },
 };
-
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
-
-function bytesToString(bytes) {
-  if (!bytes) return "";
-  // Let decode errors propagate — callers must handle them so a corrupted
-  // vault entry is distinguishable from an unset one (#45).
-  return textDecoder.decode(Uint8Array.from(bytes));
-}
-
-function stringToBytes(value) {
-  return Array.from(textEncoder.encode(value ?? ""));
-}
 
 // DOM refs
 const repoGrid = document.getElementById("repo-grid");
@@ -604,88 +568,16 @@ const settingsInputs = {
 const forgejoHostList = document.getElementById("settings-forgejo-host-list");
 const forgejoAddHostBtn = document.getElementById("settings-forgejo-add-host");
 
-async function initVault() {
-  const vaultKey = await invoke("get_vault_key");
-  const vaultPath = await join(await appLocalDataDir(), VAULT_FILE);
-  let stronghold;
-  try {
-    stronghold = await Stronghold.load(vaultPath, vaultKey);
-  } catch (loadErr) {
-    // Only delete and recreate the vault if the error looks like a key
-    // mismatch or decryption failure (i.e. the vault was created with a
-    // different key — e.g. from a build before the OS keyring was enabled).
-    // For any other error (permission denied, disk full, etc.) rethrow so
-    // the problem is visible rather than silently destroying the vault.
-    const errMsg = String(loadErr).toLowerCase();
-    const isDecryptionFailure =
-      errMsg.includes("decrypt") ||
-      errMsg.includes("cipher") ||
-      errMsg.includes("mac") ||
-      errMsg.includes("aead") ||
-      errMsg.includes("stronghold");
-    if (!isDecryptionFailure) {
-      throw loadErr;
-    }
-    // vault.hold exists but was encrypted with a different key (e.g. from a
-    // build where the OS keyring was not enabled and the key lived only in
-    // process memory). Delete the stale file and start fresh — the old data
-    // was already inaccessible.
-    await invoke("delete_vault_file", { confirm: "yes" });
-    stronghold = await Stronghold.load(vaultPath, vaultKey);
-    ot.toast(
-      "Your API keys were stored in an unreadable vault (from an older build) and have been cleared. Please re-enter them in Settings.",
-      "Vault reset",
-      { variant: "warning" },
-    );
-  }
-  let client;
-  try {
-    client = await stronghold.loadClient(VAULT_CLIENT);
-  } catch {
-    client = await stronghold.createClient(VAULT_CLIENT);
-  }
-  settingsState.stronghold = stronghold;
-  settingsState.vaultStore = client.getStore();
-
-  for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
-    const stored = await settingsState.vaultStore.get(vaultKey);
-    try {
-      settingsState.keys[field] = bytesToString(stored);
-      settingsState.corruptedKeys = settingsState.corruptedKeys || {};
-      settingsState.corruptedKeys[field] = false;
-    } catch {
-      // Mark this field as corrupted — populateSettingsInputs will disable
-      // the input so the user cannot silently overwrite a still-present but
-      // unreadable secret (#45).
-      settingsState.keys[field] = "";
-      settingsState.corruptedKeys = settingsState.corruptedKeys || {};
-      settingsState.corruptedKeys[field] = true;
-    }
-  }
-
-  // Load per-host Forgejo tokens. The host list may not be ready yet at
-  // vault init time (initEndpoints runs in parallel), so we reload tokens
-  // after initEndpoints via loadForgejoTokensFromVault().
+async function initApiKeys() {
+  const keys = await invoke("get_api_keys");
+  settingsState.keys = {
+    github: keys.github_api_key || "",
+    gitlab: keys.gitlab_api_key || "",
+  };
+  settingsState.forgejoTokens = keys.forgejo_tokens || [];
 }
 
-/// Reads each Forgejo host's token from the vault into settingsState.forgejoTokens.
-/// Must be called after settingsState.endpoints.forgejoHosts is populated.
-async function loadForgejoTokensFromVault() {
-  if (!settingsState.vaultStore) return;
-  const hosts = settingsState.endpoints.forgejoHosts;
-  settingsState.forgejoTokens = await Promise.all(
-    hosts.map(async (entry) => {
-      try {
-        const stored = await settingsState.vaultStore.get(forgejoVaultKey(entry.host));
-        return stored ? bytesToString(stored) : "";
-      } catch {
-        return "";
-      }
-    }),
-  );
-}
-
-/// Normalises the forgejo_trusted_hosts value from the Store or backend.
+/// Normalises the forgejo_trusted_hosts value from the backend.
 /// Accepts both old Vec<String> format and new Vec<{host, token_ref}> format,
 /// always returning the new object format.
 function normaliseForgejoHosts(raw) {
@@ -700,67 +592,24 @@ function normaliseForgejoHosts(raw) {
 }
 
 async function initEndpoints() {
-  const store = await loadStore(STORE_FILE, { autoSave: false });
-  settingsState.endpointStore = store;
-
-  const stored = {
-    github: await store.get(ENDPOINT_KEY_NAMES.github),
-    gitlab: await store.get(ENDPOINT_KEY_NAMES.gitlab),
-    forgejoHosts: await store.get(ENDPOINT_KEY_NAMES.forgejoHosts),
+  const backend = await invoke("get_endpoints");
+  settingsState.endpoints = {
+    github: backend.github_endpoint || ENDPOINT_DEFAULTS.github,
+    gitlab: backend.gitlab_endpoint || ENDPOINT_DEFAULTS.gitlab,
+    forgejoHosts: normaliseForgejoHosts(backend.forgejo_trusted_hosts),
   };
-
-  // First-run fallback: read endpoints from config.json (the backend) and
-  // seed the Store so subsequent runs read from there directly.
-  if (!stored.github && !stored.gitlab && !stored.forgejoHosts) {
-    try {
-      const backend = await invoke("get_endpoints");
-      settingsState.endpoints = {
-        github: backend.github_endpoint || ENDPOINT_DEFAULTS.github,
-        gitlab: backend.gitlab_endpoint || ENDPOINT_DEFAULTS.gitlab,
-        forgejoHosts: normaliseForgejoHosts(backend.forgejo_trusted_hosts),
-      };
-      await store.set(
-        ENDPOINT_KEY_NAMES.github,
-        settingsState.endpoints.github,
-      );
-      await store.set(
-        ENDPOINT_KEY_NAMES.gitlab,
-        settingsState.endpoints.gitlab,
-      );
-      await store.set(
-        ENDPOINT_KEY_NAMES.forgejoHosts,
-        settingsState.endpoints.forgejoHosts,
-      );
-      await store.save();
-    } catch (e) {
-      // Fall through to defaults — backend may not be ready on first launch.
-      console.warn("get_endpoints fallback failed:", e);
-    }
-  } else {
-    // Distinguish "null = never saved" from "[] = intentional empty list" (#44).
-    // Only fall back to defaults when the key was never written (null/undefined).
-    const forgejoHosts =
-      stored.forgejoHosts === null || stored.forgejoHosts === undefined
-        ? [...ENDPOINT_DEFAULTS.forgejoHosts]
-        : normaliseForgejoHosts(stored.forgejoHosts);
-    settingsState.endpoints = {
-      github: stored.github || ENDPOINT_DEFAULTS.github,
-      gitlab: stored.gitlab || ENDPOINT_DEFAULTS.gitlab,
-      forgejoHosts,
-    };
-  }
 }
 
 async function pushSettingsToBackend() {
-  await invoke("update_api_keys", {
-    githubApiKey: settingsState.keys.github,
-    gitlabApiKey: settingsState.keys.gitlab,
-    forgejoTokens: settingsState.forgejoTokens,
-  });
   await invoke("update_endpoints", {
     githubEndpoint: settingsState.endpoints.github,
     gitlabEndpoint: settingsState.endpoints.gitlab,
     forgejoTrustedHosts: settingsState.endpoints.forgejoHosts,
+  });
+  await invoke("update_api_keys", {
+    githubApiKey: settingsState.keys.github,
+    gitlabApiKey: settingsState.keys.gitlab,
+    forgejoTokens: settingsState.forgejoTokens,
   });
 }
 
@@ -810,17 +659,10 @@ function renderForgejoHostRows() {
 }
 
 function populateSettingsInputs() {
-  const corrupted = settingsState.corruptedKeys || {};
   for (const field of ["github", "gitlab"]) {
     const input = settingsInputs[field];
-    if (corrupted[field]) {
-      input.value = "";
-      input.disabled = true;
-      input.placeholder = "⚠ Vault entry corrupted — clear vault to reset";
-    } else {
-      input.value = settingsState.keys[field];
-      input.disabled = false;
-    }
+    input.value = settingsState.keys[field];
+    input.disabled = false;
   }
   settingsInputs.githubEndpoint.value = settingsState.endpoints.github;
   settingsInputs.gitlabEndpoint.value = settingsState.endpoints.gitlab;
@@ -930,46 +772,6 @@ settingsSaveBtn.addEventListener("click", async () => {
   settingsSaveBtn.disabled = true;
   settingsSaveBtn.setAttribute("aria-busy", "true");
   try {
-    // Persist secrets to Stronghold — vault must be initialised.
-    if (!settingsState.vaultStore || !settingsState.stronghold) {
-      throw new Error(
-        "Vault unavailable — API tokens not saved. Check the warning shown at startup.",
-      );
-    }
-    // GitHub / GitLab tokens.
-    for (const [field, vaultKey] of Object.entries(VAULT_KEY_NAMES)) {
-      await settingsState.vaultStore.insert(
-        vaultKey,
-        stringToBytes(newKeys[field]),
-      );
-    }
-    // Per-host Forgejo tokens — save each under its own vault key.
-    for (let i = 0; i < newForgejoHosts.length; i++) {
-      await settingsState.vaultStore.insert(
-        forgejoVaultKey(newForgejoHosts[i].host),
-        stringToBytes(newForgejoTokens[i]),
-      );
-    }
-    await settingsState.stronghold.save();
-
-    // Persist endpoints to Store — endpoint store must also be ready.
-    if (!settingsState.endpointStore) {
-      throw new Error("Endpoint store unavailable — endpoints not saved.");
-    }
-    await settingsState.endpointStore.set(
-      ENDPOINT_KEY_NAMES.github,
-      newEndpoints.github,
-    );
-    await settingsState.endpointStore.set(
-      ENDPOINT_KEY_NAMES.gitlab,
-      newEndpoints.gitlab,
-    );
-    await settingsState.endpointStore.set(
-      ENDPOINT_KEY_NAMES.forgejoHosts,
-      newEndpoints.forgejoHosts,
-    );
-    await settingsState.endpointStore.save();
-
     settingsState.keys = newKeys;
     settingsState.endpoints = newEndpoints;
     settingsState.forgejoTokens = newForgejoTokens;
@@ -985,40 +787,15 @@ settingsSaveBtn.addEventListener("click", async () => {
 });
 
 async function initSettings() {
-  const [vaultErr, endpointErr] = await Promise.all([
-    initVault().then(() => null, (e) => e),
-    initEndpoints().then(() => null, (e) => e),
-  ]);
-  if (vaultErr) {
-    console.warn("Stronghold init failed:", vaultErr);
-    ot.toast(String(vaultErr), "Vault unavailable — API tokens will not persist", {
-      variant: "warning",
-    });
-  }
+  const endpointErr = await initEndpoints().then(() => null, (e) => e);
   if (endpointErr) {
-    console.warn("Store init failed:", endpointErr);
+    console.warn("Endpoint init failed:", endpointErr);
   }
-  // Load per-host Forgejo tokens now that the host list is ready.
   try {
-    await loadForgejoTokensFromVault();
+    await initApiKeys();
   } catch (e) {
-    console.warn("Loading Forgejo tokens from vault failed:", e);
-  }
-  // Push only API keys to the backend at startup (tokens never persist to
-  // config.json — they must be loaded from the vault each launch). Endpoints
-  // are intentionally NOT pushed here: update_endpoints is write-on-change
-  // in Rust, but the config.json read on startup already loads them, so an
-  // unconditional push here was clobbering hand-edited config.json on every
-  // launch (#38). Endpoint updates travel to the backend only when the user
-  // explicitly saves settings.
-  try {
-    await invoke("update_api_keys", {
-      githubApiKey: settingsState.keys.github,
-      gitlabApiKey: settingsState.keys.gitlab,
-      forgejoTokens: settingsState.forgejoTokens,
-    });
-  } catch (e) {
-    console.warn("Pushing API keys to backend failed:", e);
+    console.warn("Keyring init failed:", e);
+    ot.toast(String(e), "API tokens unavailable", { variant: "warning" });
   }
   try {
     settingsAppVersion.textContent = `v${await getVersion()}`;

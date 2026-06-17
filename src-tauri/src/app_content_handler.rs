@@ -1,8 +1,8 @@
+use crate::RepoData;
 use crate::json_handler;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use tracker_libs::RepoData;
 
 fn ensure_dir(filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(filepath);
@@ -49,10 +49,7 @@ pub fn del_repo(datafilepath: &str, url: &str) -> Result<(), Box<dyn std::error:
     write_repos(datafilepath, &repos)
 }
 
-pub fn upd_repo_status(
-    datafilepath: &str,
-    url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn upd_repo_status(datafilepath: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut repos = read_repos(datafilepath)?;
     let entry = repos
         .get_mut(url)
@@ -93,8 +90,8 @@ pub fn edit_repo(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ForgeKind;
     use tempfile::NamedTempFile;
-    use tracker_libs::{ForgeKind, RepoData};
 
     /// Returns a NamedTempFile whose underlying file has been removed so that
     /// `read_repos` sees a non-existent path and returns an empty BTreeMap,

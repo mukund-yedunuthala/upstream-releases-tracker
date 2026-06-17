@@ -1,5 +1,5 @@
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 pub fn read_from_json<T: DeserializeOwned>(
     file_path: &str,
 ) -> Result<T, Box<dyn std::error::Error>> {
-    let file = File::open(file_path)
-        .map_err(|e| format!("Failed to open '{}': {}", file_path, e))?;
+    let file =
+        File::open(file_path).map_err(|e| format!("Failed to open '{}': {}", file_path, e))?;
     let reader = BufReader::new(file);
     let data = serde_json::from_reader(reader)
         .map_err(|e| format!("Failed to parse JSON in '{}': {}", file_path, e))?;
@@ -31,11 +31,21 @@ pub fn write_json_file<T: Serialize>(
         let file = File::create(&tmp_path)
             .map_err(|e| format!("Failed to create temp file '{}': {}", tmp_path.display(), e))?;
         let mut writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(&mut writer, data)
-            .map_err(|e| format!("Failed to serialize JSON to '{}': {}", tmp_path.display(), e))?;
+        serde_json::to_writer_pretty(&mut writer, data).map_err(|e| {
+            format!(
+                "Failed to serialize JSON to '{}': {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
         // Explicit flush — BufWriter::drop silently discards flush errors.
-        writer.flush()
-            .map_err(|e| format!("Failed to flush write buffer to '{}': {}", tmp_path.display(), e))?;
+        writer.flush().map_err(|e| {
+            format!(
+                "Failed to flush write buffer to '{}': {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
     }
 
     fs::rename(&tmp_path, path).map_err(|e| {
@@ -62,7 +72,9 @@ mod tests {
     fn write_then_read_round_trips() {
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_str().unwrap();
-        let data = Row { value: "hello".to_string() };
+        let data = Row {
+            value: "hello".to_string(),
+        };
         write_json_file(path, &data).unwrap();
         let read_back: Row = read_from_json(path).unwrap();
         assert_eq!(read_back, data);
@@ -84,7 +96,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Write an initial value into the directory.
         let target = dir.path().join("data.json");
-        let original = Row { value: "original".to_string() };
+        let original = Row {
+            value: "original".to_string(),
+        };
         write_json_file(target.to_str().unwrap(), &original).unwrap();
 
         // Create a read-only subdirectory; point the write target inside it
@@ -95,7 +109,12 @@ mod tests {
         let ro_target = ro_dir.join("data.json");
 
         // Write-to-readonly must fail.
-        let err = write_json_file(ro_target.to_str().unwrap(), &Row { value: "new".to_string() });
+        let err = write_json_file(
+            ro_target.to_str().unwrap(),
+            &Row {
+                value: "new".to_string(),
+            },
+        );
         assert!(err.is_err(), "expected write to read-only dir to fail");
 
         // The original file in the writable dir must be untouched.
@@ -121,7 +140,12 @@ mod tests {
         std::fs::create_dir(&subdir).unwrap();
         let target_str = subdir.to_str().unwrap();
 
-        let _ = write_json_file(target_str, &Row { value: "x".to_string() });
+        let _ = write_json_file(
+            target_str,
+            &Row {
+                value: "x".to_string(),
+            },
+        );
 
         // After the failed write the .tmp sibling must not exist.
         let tmp = format!("{}.tmp", target_str);

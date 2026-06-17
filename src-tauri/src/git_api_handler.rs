@@ -1,9 +1,6 @@
+use crate::{Config, ForgeKind, RepoData};
 use reqwest::Client;
 use std::sync::OnceLock;
-use tracker_libs::{Config, ForgeKind, RepoData};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GitHandler;
 
 fn http_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -33,15 +30,8 @@ fn parse_url(url: &str) -> Result<(String, String, String), String> {
         ));
     }
     let host = match parsed.port() {
-        Some(p) => format!(
-            "{}:{}",
-            parsed.host_str().ok_or("URL has no host")?,
-            p
-        ),
-        None => parsed
-            .host_str()
-            .ok_or("URL has no host")?
-            .to_string(),
+        Some(p) => format!("{}:{}", parsed.host_str().ok_or("URL has no host")?, p),
+        None => parsed.host_str().ok_or("URL has no host")?.to_string(),
     };
     let segments: Vec<&str> = parsed
         .path_segments()
@@ -69,7 +59,6 @@ async fn api_call(
         ForgeKind::ForgejoCompatible => forgejo_api_call(config, host_url, owner, repo).await,
 
         ForgeKind::GitLab => gitlab_api_call(config, owner, repo).await,
-
     }
 }
 
@@ -78,20 +67,15 @@ async fn gitlab_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
-    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-    // GitLab requires the project path to be URL-encoded as a single slug.
-    // The slash separator between namespace and project is the literal %2F;
-    // owner and repo segments are each percent-encoded over NON_ALPHANUMERIC
-    // so that dots, hyphens, and underscores are also encoded — a conservative
-    // choice that prevents path-injection if validation is relaxed later (#50).
-    let encode_segment = |s: &str| utf8_percent_encode(s, NON_ALPHANUMERIC).to_string();
+    let encode_segment =
+        |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let project_slug = format!("{}%2F{}", encode_segment(owner), encode_segment(repo));
 
     // Helper: build an authorized GET request for a GitLab API URL and validate
     // that the endpoint host hasn't been tampered with before sending the token.
     let make_request = |url: &str| -> Result<reqwest::RequestBuilder, String> {
-        let parsed = url::Url::parse(url)
-            .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
+        let parsed =
+            url::Url::parse(url).map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
         if parsed.scheme() != "https" {
             return Err(format!(
                 "GitLab endpoint must use HTTPS (got '{}'). Check gitlab_endpoint in settings.",
@@ -203,8 +187,8 @@ async fn github_api_call(
     if !config.github_api_key.is_empty() {
         // Validate endpoint host before sending the token to prevent exfiltration
         // if github_endpoint is misconfigured to an attacker-controlled URL.
-        let parsed = url::Url::parse(&api_url)
-            .map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
+        let parsed =
+            url::Url::parse(&api_url).map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
         if parsed.host_str() != Some("api.github.com") {
             return Err(format!(
                 "GitHub API token refused: endpoint host '{}' is not 'api.github.com'. \
@@ -383,40 +367,33 @@ fn build_repo_data(
     })
 }
 
-impl GitHandler {
-    pub async fn post_request(
-        &self,
-        config: &Config,
-        url: String,
-        host_kind: ForgeKind,
-    ) -> Result<RepoData, String> {
-        let (host_url, owner, repo_name) = parse_url(&url)?;
-        let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
-        build_repo_data(&json, owner, repo_name, host_url, host_kind, String::new())
-    }
+pub async fn post_request(
+    config: &Config,
+    url: String,
+    host_kind: ForgeKind,
+) -> Result<RepoData, String> {
+    let (host_url, owner, repo_name) = parse_url(&url)?;
+    let json = api_call(config, &owner, &repo_name, &host_url, &host_kind).await?;
+    build_repo_data(&json, owner, repo_name, host_url, host_kind, String::new())
+}
 
-    pub async fn refresh_repo(
-        &self,
-        config: &Config,
-        old_repo: &RepoData,
-    ) -> Result<RepoData, String> {
-        let json = api_call(
-            config,
-            &old_repo.owner,
-            &old_repo.repo_name,
-            &old_repo.host_url,
-            &old_repo.host_kind,
-        )
-        .await?;
-        build_repo_data(
-            &json,
-            old_repo.owner.clone(),
-            old_repo.repo_name.clone(),
-            old_repo.host_url.clone(),
-            old_repo.host_kind.clone(),
-            old_repo.system_version.clone(),
-        )
-    }
+pub async fn refresh_repo(config: &Config, old_repo: &RepoData) -> Result<RepoData, String> {
+    let json = api_call(
+        config,
+        &old_repo.owner,
+        &old_repo.repo_name,
+        &old_repo.host_url,
+        &old_repo.host_kind,
+    )
+    .await?;
+    build_repo_data(
+        &json,
+        old_repo.owner.clone(),
+        old_repo.repo_name.clone(),
+        old_repo.host_url.clone(),
+        old_repo.host_kind.clone(),
+        old_repo.system_version.clone(),
+    )
 }
 
 #[cfg(test)]
@@ -425,7 +402,7 @@ mod tests {
         build_repo_data, extract_release_notes, forgejo_api_call, github_api_call, http_client,
         parse_url, send_with_retry,
     };
-    use tracker_libs::{Config, ForgeKind, ForgejoHost};
+    use crate::{Config, ForgeKind, ForgejoHost};
 
     // --- parse_url ---
 
@@ -433,7 +410,11 @@ mod tests {
     fn parse_url_github_flat() {
         assert_eq!(
             parse_url("https://github.com/torvalds/linux").unwrap(),
-            ("github.com".to_string(), "torvalds".to_string(), "linux".to_string())
+            (
+                "github.com".to_string(),
+                "torvalds".to_string(),
+                "linux".to_string()
+            )
         );
     }
 
@@ -441,7 +422,11 @@ mod tests {
     fn parse_url_github_trailing_slash() {
         assert_eq!(
             parse_url("https://github.com/torvalds/linux/").unwrap(),
-            ("github.com".to_string(), "torvalds".to_string(), "linux".to_string())
+            (
+                "github.com".to_string(),
+                "torvalds".to_string(),
+                "linux".to_string()
+            )
         );
     }
 
@@ -449,7 +434,11 @@ mod tests {
     fn parse_url_gitlab_subgroup() {
         assert_eq!(
             parse_url("https://gitlab.com/group/subgroup/project").unwrap(),
-            ("gitlab.com".to_string(), "group/subgroup".to_string(), "project".to_string())
+            (
+                "gitlab.com".to_string(),
+                "group/subgroup".to_string(),
+                "project".to_string()
+            )
         );
     }
 
@@ -457,7 +446,11 @@ mod tests {
     fn parse_url_gitlab_deep_subgroup() {
         assert_eq!(
             parse_url("https://gitlab.com/a/b/c/d").unwrap(),
-            ("gitlab.com".to_string(), "a/b/c".to_string(), "d".to_string())
+            (
+                "gitlab.com".to_string(),
+                "a/b/c".to_string(),
+                "d".to_string()
+            )
         );
     }
 
@@ -475,7 +468,11 @@ mod tests {
     fn parse_url_preserves_port() {
         assert_eq!(
             parse_url("https://forgejo.local:3000/owner/repo").unwrap(),
-            ("forgejo.local:3000".to_string(), "owner".to_string(), "repo".to_string())
+            (
+                "forgejo.local:3000".to_string(),
+                "owner".to_string(),
+                "repo".to_string()
+            )
         );
     }
 
@@ -499,10 +496,7 @@ mod tests {
     #[test]
     fn extract_release_notes_gitlab_uses_description() {
         let json = serde_json::json!({ "body": "ignored", "description": "GL notes" });
-        assert_eq!(
-            extract_release_notes(&json, &ForgeKind::GitLab),
-            "GL notes"
-        );
+        assert_eq!(extract_release_notes(&json, &ForgeKind::GitLab), "GL notes");
     }
 
     #[test]
@@ -517,36 +511,39 @@ mod tests {
     #[test]
     fn extract_release_notes_missing_key_returns_empty() {
         let json = serde_json::json!({ "tag_name": "v1.0" });
-        assert_eq!(
-            extract_release_notes(&json, &ForgeKind::GitHub),
-            ""
-        );
+        assert_eq!(extract_release_notes(&json, &ForgeKind::GitHub), "");
     }
 
-    // --- GitHandler::post_request error paths (no HTTP) ---
+    // --- post_request error paths (no HTTP) ---
 
     #[tokio::test]
     async fn post_request_rejects_http_url() {
-        use super::GitHandler;
-        use tracker_libs::Config;
         let config = Config::new();
-        let err = GitHandler
-            .post_request(&config, "http://github.com/owner/repo".to_string(), ForgeKind::GitHub)
-            .await
-            .unwrap_err();
+        let err = super::post_request(
+            &config,
+            "http://github.com/owner/repo".to_string(),
+            ForgeKind::GitHub,
+        )
+        .await
+        .unwrap_err();
         assert!(err.contains("HTTPS"), "expected HTTPS error, got: {}", err);
     }
 
     #[tokio::test]
     async fn post_request_rejects_too_short_url() {
-        use super::GitHandler;
-        use tracker_libs::Config;
         let config = Config::new();
-        let err = GitHandler
-            .post_request(&config, "https://github.com/onlyone".to_string(), ForgeKind::GitHub)
-            .await
-            .unwrap_err();
-        assert!(err.contains("owner and repository"), "expected segment error, got: {}", err);
+        let err = super::post_request(
+            &config,
+            "https://github.com/onlyone".to_string(),
+            ForgeKind::GitHub,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("owner and repository"),
+            "expected segment error, got: {}",
+            err
+        );
     }
 
     // --- GitLab API tests via mockito (HTTP endpoint via gitlab_endpoint config) ---
@@ -562,13 +559,11 @@ mod tests {
             { "tag_name": "v2.0", "draft": true },
             { "tag_name": "v1.0", "draft": false }
         ]);
-        let found = releases
-            .as_array()
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|r| r["draft"] != serde_json::Value::Bool(true))
-                    .cloned()
-            });
+        let found = releases.as_array().and_then(|arr| {
+            arr.iter()
+                .find(|r| r["draft"] != serde_json::Value::Bool(true))
+                .cloned()
+        });
         assert_eq!(found.unwrap()["tag_name"], "v1.0");
     }
 
@@ -578,13 +573,11 @@ mod tests {
             { "tag_name": "v2.0", "draft": true },
             { "tag_name": "v1.0", "draft": true }
         ]);
-        let found = releases
-            .as_array()
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|r| r["draft"] != serde_json::Value::Bool(true))
-                    .cloned()
-            });
+        let found = releases.as_array().and_then(|arr| {
+            arr.iter()
+                .find(|r| r["draft"] != serde_json::Value::Bool(true))
+                .cloned()
+        });
         assert!(found.is_none());
     }
 
@@ -618,7 +611,10 @@ mod tests {
             String::new(),
         )
         .unwrap_err();
-        assert!(err.contains("missing tag_name") || err.contains("tag_name"), "got: {err}");
+        assert!(
+            err.contains("missing tag_name") || err.contains("tag_name"),
+            "got: {err}"
+        );
     }
 
     #[test]
