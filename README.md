@@ -6,7 +6,7 @@ A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repo
 
 - **GitHub** (public repos and private repos with a personal access token)
 - **Forgejo / Gitea** (Codeberg and self-hosted instances — see token security note below)
-- **GitLab** — stubbed, not yet implemented
+- **GitLab** (including subgroup project URLs)
 
 ## Development
 
@@ -56,13 +56,13 @@ Tauri commands: `get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_re
 | Repos | `~/.local/share/upstream-releases-tracker/data/repos.json` |
 | Config | `~/.config/upstream-releases-tracker/config.json` |
 
-Config is created automatically with empty values on first run.
+Config is created automatically with default endpoint and trusted-host metadata on first run.
 
 ## Token security
 
-API tokens are stored in **plaintext** in `config.json`. Keep the file permissions restrictive (`chmod 600`).
+API tokens are stored in the OS keyring, not in `config.json`.
 
-For Forgejo/Gitea, the token is only sent to hosts listed in `forgejo_trusted_hosts` in `config.json` (default: `["codeberg.org"]`). Add other trusted Forgejo instances there before adding repos from them.
+For Forgejo/Gitea, tokens are only sent to hosts listed in `forgejo_trusted_hosts` in `config.json` (default: `codeberg.org`). Add other trusted Forgejo instances there before adding repos from them.
 
 ## License
 
