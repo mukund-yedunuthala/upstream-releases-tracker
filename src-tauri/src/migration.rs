@@ -48,10 +48,7 @@ pub fn run_migrations(datafile_path: &str) {
 
                         // Migration 6: add "release_notes" if absent.
                         if !obj.contains_key("release_notes") {
-                            obj.insert(
-                                "release_notes".to_string(),
-                                Value::String(String::new()),
-                            );
+                            obj.insert("release_notes".to_string(), Value::String(String::new()));
                             dirty = true;
                         }
                     }
@@ -111,7 +108,7 @@ pub fn run_config_migrations(config_path: &str) {
                 }
 
                 // Migration 5: scrub plaintext API key fields. Secrets now live
-                // in the Stronghold vault — config.json should only carry
+                // in the OS keyring — config.json should only carry
                 // endpoint metadata. We blank the fields (rather than removing
                 // them) so the Config struct still deserializes on read.
                 for key in ["github_api_key", "gitlab_api_key", "forgejo_token"] {
@@ -134,7 +131,7 @@ pub fn run_config_migrations(config_path: &str) {
                 //   {"host":"gitea.example.com","token_ref":"forgejo_token:gitea.example.com"}
                 // ]
                 //
-                // The existing single forgejo_token vault secret is NOT migrated
+                // The existing single Forgejo token secret is NOT migrated
                 // automatically — the user must re-enter tokens per host in Settings.
                 // The old top-level forgejo_token key is removed from config.json
                 // (it was already blanked by migration 5, so no secret is lost).
@@ -160,10 +157,7 @@ pub fn run_config_migrations(config_path: &str) {
                                 })
                             })
                             .collect();
-                        obj.insert(
-                            "forgejo_trusted_hosts".to_string(),
-                            Value::Array(new_hosts),
-                        );
+                        obj.insert("forgejo_trusted_hosts".to_string(), Value::Array(new_hosts));
                         dirty = true;
                     }
                 }
@@ -248,7 +242,10 @@ mod tests {
         );
         run_repos(&file);
         let out = read_json(&file);
-        assert_eq!(out["https://github.com/a/b"]["host_url"], json!("github.com"));
+        assert_eq!(
+            out["https://github.com/a/b"]["host_url"],
+            json!("github.com")
+        );
     }
 
     #[test]
@@ -314,7 +311,10 @@ mod tests {
         // Migration 1 adds forgejo_token; migration 6 then removes the field.
         // After both run, the key must be absent (not "" — it's gone entirely).
         let file = NamedTempFile::new().unwrap();
-        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/" }),
+        );
         run_config(&file);
         let out = read_json(&file);
         assert!(
@@ -329,7 +329,10 @@ mod tests {
         // Migration 2 adds the default codeberg.org host; migration 6 upgrades
         // the plain string to the object format used since N2.
         let file = NamedTempFile::new().unwrap();
-        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/" }),
+        );
         run_config(&file);
         let out = read_json(&file);
         assert_eq!(
@@ -384,7 +387,10 @@ mod tests {
     #[test]
     fn config_m3_adds_gitlab_api_key() {
         let file = NamedTempFile::new().unwrap();
-        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/" }),
+        );
         run_config(&file);
         let out = read_json(&file);
         assert_eq!(out["gitlab_api_key"], json!(""));
@@ -393,7 +399,10 @@ mod tests {
     #[test]
     fn config_m4_adds_gitlab_endpoint() {
         let file = NamedTempFile::new().unwrap();
-        write_json(&file, &json!({ "github_endpoint": "https://api.github.com/repos/" }));
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/" }),
+        );
         run_config(&file);
         let out = read_json(&file);
         assert_eq!(

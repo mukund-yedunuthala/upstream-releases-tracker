@@ -6,7 +6,7 @@ A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repo
 
 - **GitHub** (public repos and private repos with a personal access token)
 - **Forgejo / Gitea** (Codeberg and self-hosted instances — see token security note below)
-- **GitLab** — stubbed, not yet implemented
+- **GitLab** (including subgroup project URLs)
 
 ## Development
 
@@ -44,11 +44,10 @@ npm run dev
 
 | Layer | Tech |
 |---|---|
-| Frontend | Vanilla JS + Vite, no framework. `frontend/app.js` is the single JS file. UI library: `oat` (bundled). |
+| Frontend | Vanilla JS + Vite, no framework. `app.js` is the single JS file. UI library: `oat` (bundled). |
 | Backend | Tauri 2.x (`src-tauri/`). All I/O and HTTP happen in Rust. |
-| Shared types | `tracker_libs/` — `Config`, `RepoData`, `ForgeKind`. No I/O. |
 
-Tauri commands: `get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`.
+Tauri commands: `get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
 
 ## Data locations (Linux)
 
@@ -57,13 +56,13 @@ Tauri commands: `get_repos`, `add_repo`, `delete_repo`, `refresh_repo`, `refresh
 | Repos | `~/.local/share/upstream-releases-tracker/data/repos.json` |
 | Config | `~/.config/upstream-releases-tracker/config.json` |
 
-Config is created automatically with empty values on first run.
+Config is created automatically with default endpoint and trusted-host metadata on first run.
 
 ## Token security
 
-API tokens are stored in **plaintext** in `config.json`. Keep the file permissions restrictive (`chmod 600`).
+API tokens are stored in the OS keyring, not in `config.json`.
 
-For Forgejo/Gitea, the token is only sent to hosts listed in `forgejo_trusted_hosts` in `config.json` (default: `["codeberg.org"]`). Add other trusted Forgejo instances there before adding repos from them.
+For Forgejo/Gitea, tokens are only sent to hosts listed in `forgejo_trusted_hosts` in `config.json` (default: `codeberg.org`). Add other trusted Forgejo instances there before adding repos from them.
 
 ## License
 

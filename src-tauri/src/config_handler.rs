@@ -1,11 +1,10 @@
+use crate::Config;
 use crate::json_handler;
 use std::fs;
 use std::path::Path;
-use tracker_libs::Config;
 
 pub fn config_path_string() -> Result<String, String> {
-    let config_dir =
-        dirs::config_local_dir().ok_or("Failed to locate local config directory")?;
+    let config_dir = dirs::config_local_dir().ok_or("Failed to locate local config directory")?;
     let path = config_dir.join("upstream-releases-tracker/config.json");
     path.to_str()
         .ok_or("Config path contains invalid UTF-8".to_string())
@@ -44,8 +43,8 @@ pub fn write_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ForgejoHost;
     use tempfile::NamedTempFile;
-    use tracker_libs::ForgejoHost;
 
     fn write_and_read(config: &Config) -> Config {
         let file = NamedTempFile::new().unwrap();
