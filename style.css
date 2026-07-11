@@ -426,6 +426,7 @@ main.container {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    flex-wrap: wrap;
 }
 
 #settings-logs-output {
@@ -437,6 +438,8 @@ main.container {
     border-radius: var(--radius-small);
     background: var(--faint);
     font-size: 0.75rem;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;

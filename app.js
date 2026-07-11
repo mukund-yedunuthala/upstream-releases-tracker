@@ -555,6 +555,7 @@ const settingsBtn = document.getElementById("settings-btn");
 const settingsSaveBtn = document.getElementById("settings-save-btn");
 const settingsShowKeys = document.getElementById("settings-show-keys");
 const settingsLogsRefresh = document.getElementById("settings-logs-refresh");
+const settingsLogsClear = document.getElementById("settings-logs-clear");
 const settingsLogsOutput = document.getElementById("settings-logs-output");
 const settingsLogsStatus = document.getElementById("settings-logs-status");
 const settingsAppVersion = document.getElementById("settings-app-version");
@@ -701,6 +702,23 @@ forgejoAddHostBtn.addEventListener("click", () => {
 // refreshLogs() calls within the session for incremental reads (F9).
 // Reset to undefined when the user manually triggers a full refresh.
 let logNextOffset = undefined;
+let logLineCount = 0;
+
+function formatLogLine(line) {
+  try {
+    const log = JSON.parse(line);
+    if (!log || typeof log !== "object") return line;
+    const date = new Date(Number(log.ts));
+    const when = Number.isFinite(date.getTime())
+      ? date.toLocaleString()
+      : String(log.ts ?? "");
+    const level = String(log.level ?? "").padEnd(5, " ");
+    const target = log.target ? ` ${log.target}` : "";
+    return `${when}  ${level}${target}\n  ${log.msg ?? ""}`;
+  } catch {
+    return line;
+  }
+}
 
 async function refreshLogs(incremental = false) {
   settingsLogsStatus.textContent = "Loading…";
@@ -710,24 +728,27 @@ async function refreshLogs(incremental = false) {
     if (incremental && chunk.lines.length === 0) {
       // No new data — leave the display unchanged.
       settingsLogsStatus.textContent = settingsLogsOutput.textContent
-        ? settingsLogsStatus.textContent.replace("Loading…", "").trim() || `${settingsLogsOutput.textContent.split("\n").length} line(s) (no new entries)`
+        ? `${logLineCount} line(s) (no new entries)`
         : "(no log entries yet)";
     } else {
+      const lines = chunk.lines.map(formatLogLine);
+      logLineCount = incremental ? logLineCount + lines.length : lines.length;
       if (incremental && settingsLogsOutput.textContent && settingsLogsOutput.textContent !== "(no log entries yet)") {
         // Append new lines to the existing display.
-        settingsLogsOutput.textContent += "\n" + chunk.lines.join("\n");
+        settingsLogsOutput.textContent += "\n" + lines.join("\n");
       } else {
-        settingsLogsOutput.textContent = chunk.lines.length
-          ? chunk.lines.join("\n")
+        settingsLogsOutput.textContent = lines.length
+          ? lines.join("\n")
           : "(no log entries yet)";
       }
-      settingsLogsStatus.textContent = `${settingsLogsOutput.textContent.split("\n").filter(l => l !== "(no log entries yet)").length} line(s)`;
+      settingsLogsStatus.textContent = `${logLineCount} line(s)`;
     }
     logNextOffset = chunk.next_offset;
   } catch (e) {
     settingsLogsOutput.textContent = "";
     settingsLogsStatus.textContent = `Error: ${e}`;
     logNextOffset = undefined;
+    logLineCount = 0;
   }
 }
 
@@ -735,6 +756,22 @@ settingsLogsRefresh.addEventListener("click", () => {
   // Manual refresh always does a full re-read (resets incremental state).
   logNextOffset = undefined;
   refreshLogs(false);
+});
+
+settingsLogsClear.addEventListener("click", async () => {
+  settingsLogsStatus.textContent = "Clearing…";
+  settingsLogsClear.disabled = true;
+  try {
+    await invoke("clear_logs");
+    logNextOffset = undefined;
+    logLineCount = 0;
+    settingsLogsOutput.textContent = "(no log entries yet)";
+    settingsLogsStatus.textContent = "0 line(s)";
+  } catch (e) {
+    settingsLogsStatus.textContent = `Error: ${e}`;
+  } finally {
+    settingsLogsClear.disabled = false;
+  }
 });
 
 
