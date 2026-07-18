@@ -148,9 +148,8 @@
                     <section class="settings-section">
                         <h4>API Keys</h4>
                         <p class="settings-help">
-                            Tokens are stored locally in an encrypted vault. They
-                            never leave your machine except as auth headers to the
-                            forge you configured.
+                            Tokens are stored in your operating system keyring and
+                            only sent as authentication headers to configured forges.
                         </p>
                         <label data-field>
                             GitHub token
@@ -267,7 +266,7 @@
                         </p>
                         <p class="muted">
                             No telemetry or analytics are collected. API tokens are
-                            stored in an encrypted local vault and transmitted only
+                            stored in the operating system keyring and transmitted only
                             as authentication headers to the forge endpoints you
                             configure. All other data is stored locally on your
                             device.

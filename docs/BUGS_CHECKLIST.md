@@ -1,4 +1,6 @@
-# BUGS.md Fix Checklist
+# Historical bug-fix checklist
+
+Archived 2026 implementation notes. Paths and completed-state markers are historical; use the source and README for current behavior.
 
 Live tracking artifact for the 9-batch fix plan derived from `BUGS.md`.
 The plan itself lives at `~/.claude/plans/read-bugs-md-make-a-ticklish-reddy.md`.

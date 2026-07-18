@@ -2,6 +2,10 @@
 
 A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repositories and compares them against the version installed on your system.
 
+## Project status
+
+This is a personal project built with assistance from coding agents. It is provided as-is, and no further development is currently planned.
+
 ## Supported forges
 
 - **GitHub** (public repos and private repos with a personal access token)
