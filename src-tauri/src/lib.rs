@@ -74,10 +74,7 @@ pub struct RepoData {
     pub release_notes: String,
 }
 
-/// Shared app state: the data-file path, a mutex that serializes all
-/// read-modify-write operations on it, and the live runtime config. Config
-/// is held under its own mutex so the frontend can update endpoints / push
-/// keyring-sourced API keys at runtime without restarting the app.
+/// Shared data-file and runtime configuration state.
 struct AppState {
     path: String,
     lock: tokio::sync::Mutex<()>,
@@ -97,11 +94,7 @@ fn datafile_path_string() -> Result<String, String> {
         .map(|s| s.to_string())?)
 }
 
-/// Write a refreshed `RepoData` back into the on-disk store.
-///
-/// Reads the current file, checks the repo still exists (TOCTOU guard),
-/// inserts the updated data, and writes atomically. Returns an error if the
-/// repo was deleted while its HTTP call was in flight.
+/// Persist a refresh only if the repo still exists.
 fn merge_refresh_result(
     path: &str,
     url: &str,
@@ -115,9 +108,7 @@ fn merge_refresh_result(
     app_content_handler::write_repos(path, &repos)
 }
 
-// API key fields are runtime-only — they live in the OS keyring and in
-// the in-memory Config when populated by the frontend. This ensures we never
-// write them back to config.json when persisting endpoint changes.
+// API keys are runtime-only and must not be written to config.json.
 fn scrub_keys(config: &Config) -> Config {
     let mut c = config.clone();
     c.github_api_key = String::new();
@@ -322,8 +313,6 @@ async fn refresh_all(state: tauri::State<'_, AppState>) -> Result<RefreshAllResu
     })
 }
 
-// ── New commands for Settings UI ────────────────────────────────────────────
-
 #[derive(Serialize)]
 struct Endpoints {
     github_endpoint: String,
@@ -392,13 +381,10 @@ async fn update_endpoints(
     gitlab_endpoint: String,
     forgejo_trusted_hosts: Vec<ForgejoHost>,
 ) -> Result<(), String> {
-    // Validate inputs before touching in-memory state.
     validate_endpoint_url(&github_endpoint, "github_endpoint")?;
     validate_endpoint_url(&gitlab_endpoint, "gitlab_endpoint")?;
     for entry in &forgejo_trusted_hosts {
         validate_forgejo_host(&entry.host)?;
-        // token_ref must be either empty or match the expected naming scheme.
-        // We only enforce it is not excessively long and has no control chars.
         if entry.token_ref.len() > 512 {
             return Err(format!(
                 "token_ref for host '{}' exceeds 512 characters",
@@ -413,11 +399,8 @@ async fn update_endpoints(
         }
     }
 
-    // Update in-memory config; only write to disk when something changed.
     let (to_persist, changed) = {
         let mut cfg = state.config.lock().await;
-        // Resize forgejo_tokens to match the new host list, preserving tokens
-        // for hosts that remain and adding empty strings for new entries.
         let new_len = forgejo_trusted_hosts.len();
         cfg.forgejo_tokens.resize(new_len, String::new());
         let changed = cfg.github_endpoint != github_endpoint
@@ -501,8 +484,6 @@ async fn get_api_keys(state: tauri::State<'_, AppState>) -> Result<ApiKeys, Stri
     })
 }
 
-// forgejo_tokens: per-host PATs in the same order as forgejo_trusted_hosts.
-// An empty string at position i means no token for that host (unauthenticated).
 #[tauri::command]
 async fn update_api_keys(
     state: tauri::State<'_, AppState>,
@@ -530,28 +511,12 @@ async fn update_api_keys(
     Ok(())
 }
 
-/// Returned by `get_logs`. Contains the new log lines and the byte offset at
-/// the end of the last read so the caller can pass it back as `after_bytes` on
-/// the next call to receive only new entries (F9 incremental reads).
 #[derive(Serialize)]
 struct LogChunk {
     lines: Vec<String>,
-    /// Byte offset after the last byte that was read.  Pass this back as
-    /// `after_bytes` on the next call to receive only new log entries.
     next_offset: u64,
 }
 
-/// Returns log lines from the most-recently-modified `.log` file.
-///
-/// - `limit`: maximum number of lines to return (capped at 1000).
-/// - `after_bytes`: if `Some(n)`, only read from byte offset `n` onwards
-///   (incremental mode — pass the `next_offset` from the previous response).
-///   If `None`, returns the tail window of the full file.
-///
-/// The returned `next_offset` should be persisted by the caller between
-/// invocations.  If the log file has been rotated (new `next_offset` would be
-/// smaller than the supplied `after_bytes`), the command automatically falls
-/// back to a full read of the new file.
 #[tauri::command]
 async fn get_logs(
     app: tauri::AppHandle,
@@ -672,6 +637,29 @@ async fn get_logs(
     }
 }
 
+#[tauri::command]
+async fn clear_logs(app: tauri::AppHandle) -> Result<(), String> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Could not get log dir: {}", e))?;
+
+    if !log_dir.exists() {
+        return Ok(());
+    }
+
+    let entries =
+        std::fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log dir: {}", e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("log") {
+            std::fs::File::create(&path)
+                .map_err(|e| format!("Failed to clear log file {}: {}", path.display(), e))?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let data_path = datafile_path_string()
@@ -731,6 +719,7 @@ pub fn run() {
             get_api_keys,
             update_api_keys,
             get_logs,
+            clear_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

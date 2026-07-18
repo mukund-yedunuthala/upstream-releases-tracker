@@ -64,7 +64,7 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 ### Tauri commands
 
 All defined in `src-tauri/src/lib.rs`:
-`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
+`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`, `clear_logs`.
 
 ### Adding a new forge
 

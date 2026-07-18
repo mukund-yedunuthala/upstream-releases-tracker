@@ -43,7 +43,7 @@ API tokens live in the OS keyring. Do not persist token values to `config.json`;
 
 Defined in `src-tauri/src/lib.rs`:
 
-`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
+`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`, `clear_logs`.
 
 ## Development Notes
 
