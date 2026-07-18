@@ -61,17 +61,7 @@ pub fn upd_repo_status(datafilepath: &str, url: &str) -> Result<(), Box<dyn std:
     write_repos(datafilepath, &repos)
 }
 
-/// Replace `old_url` with `new_url`, preserving all data from `new_data`.
-/// The caller is responsible for transferring fields like `system_version` before calling.
-///
-/// # Atomicity
-/// This function performs a single read-modify-write cycle guarded by the
-/// caller's `tokio::sync::Mutex` in `lib.rs`. The write itself goes through
-/// `json_handler::write_json_file`, which uses a rename-over-temp pattern —
-/// so the file on disk is either the old state or the new state, never a
-/// partial mix. However, this is **not** crash-atomic at the OS level (the
-/// rename can be lost on power failure before the journal flushes). For a
-/// single-user desktop app this trade-off is acceptable.
+/// Replace `old_url` with `new_url`. Callers hold the data-file mutex.
 pub fn edit_repo(
     datafilepath: &str,
     old_url: &str,
@@ -93,13 +83,8 @@ mod tests {
     use crate::ForgeKind;
     use tempfile::NamedTempFile;
 
-    /// Returns a NamedTempFile whose underlying file has been removed so that
-    /// `read_repos` sees a non-existent path and returns an empty BTreeMap,
-    /// while the path itself remains reserved until the returned value is dropped.
     fn tmp_path() -> NamedTempFile {
         let f = NamedTempFile::new().unwrap();
-        // Remove the empty file created by NamedTempFile so read_repos won't
-        // try to parse empty JSON.  The path string is still valid for our use.
         std::fs::remove_file(f.path()).ok();
         f
     }

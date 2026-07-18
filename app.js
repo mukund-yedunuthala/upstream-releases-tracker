@@ -7,13 +7,12 @@ import "@knadh/oat/oat.min.js";
 let editingUrl = null;
 let deletingUrl = null;
 
-function forgejoVaultKey(host) {
+function forgejoTokenRef(host) {
   return `forgejo_token:${host}`;
 }
 const ENDPOINT_DEFAULTS = {
   github: "https://api.github.com/repos/",
   gitlab: "https://gitlab.com/api/v4/projects/",
-  // Default host list uses the ForgejoHost object format.
   forgejoHosts: [{ host: "codeberg.org", token_ref: "forgejo_token:codeberg.org" }],
 };
 
@@ -27,7 +26,6 @@ const settingsState = {
   },
 };
 
-// DOM refs
 const repoGrid = document.getElementById("repo-grid");
 const urlInput = document.getElementById("repo-url-input");
 const repoAddField = document.getElementById("repo-add-field");
@@ -52,7 +50,6 @@ const editCancelBtn = document.getElementById("edit-cancel-btn");
 
 editCancelBtn.addEventListener("click", () => editDialog.close());
 
-// Delegated handler for all card action buttons — one listener for all cards.
 repoGrid.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" && e.key !== " ") return;
   const copyEl = e.target.closest("[data-copy]");
@@ -129,7 +126,6 @@ function buildCard(url, data) {
     !!data.system_version && data.system_version === data.latest_release;
   const badgeVariant = isUpToDate ? "success" : "warning";
   const badgeText = isUpToDate ? "Up to date" : "Update available";
-  // Only allow https: URLs in the href to prevent javascript: injection
   const safeUrl = url.startsWith("https://") ? url : null;
   const shortUrl = safeUrl ? safeUrl.replace(/^https:\/\//, "") : "";
   const name =
@@ -142,7 +138,6 @@ function buildCard(url, data) {
   card.className = "card repo-card";
   card.dataset.url = url;
 
-  // Static structural markup — no user/API data interpolated here
   card.innerHTML = `
     <header>
       <div class="repo-card-title">
@@ -172,7 +167,6 @@ function buildCard(url, data) {
     </footer>
   `;
 
-  // Inject all dynamic data via DOM — never via innerHTML interpolation
   card.querySelector(".js-card-name").textContent = name;
   const badge = card.querySelector(".js-card-badge");
   badge.className = "badge";
@@ -199,13 +193,11 @@ function buildCard(url, data) {
     card.querySelector("[data-action='mark-updated']").hidden = true;
   }
 
-  // Store host_kind for the delegated edit handler (see repoGrid click listener)
   card.dataset.hostKind = data.host_kind || "";
 
   return card;
 }
 
-// Handle update
 async function handleMarkAsUpdated(url) {
   try {
     await invoke("mark_as_updated", { url });
@@ -216,7 +208,6 @@ async function handleMarkAsUpdated(url) {
   }
 }
 
-// Toolbar + status footer
 const repoToolbar = document.getElementById("repo-toolbar");
 const repoSearch = document.getElementById("repo-search");
 const repoFilter = document.getElementById("repo-filter");
@@ -339,7 +330,6 @@ function updateStatus() {
     : "";
 }
 
-// Load all repos
 async function loadRepos({ showSkeletons = false } = {}) {
   if (showSkeletons) renderSkeletons();
   try {
@@ -373,7 +363,6 @@ repoSort.addEventListener("change", () => {
   renderRepos();
 });
 
-// Add repo
 addBtn.addEventListener("click", async () => {
   const url = urlInput.value.trim();
   const forge = hostSelect.value;
@@ -412,7 +401,6 @@ urlInput.addEventListener("input", () => {
 });
 
 
-// Enter key on input
 urlInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
@@ -420,7 +408,6 @@ urlInput.addEventListener("keydown", (ev) => {
   }
 });
 
-// Refresh single repo
 async function handleRefresh(btn, url) {
   btn.disabled = true;
   btn.setAttribute("aria-busy", "true");
@@ -437,7 +424,6 @@ async function handleRefresh(btn, url) {
   }
 }
 
-// Refresh all repos
 refreshAllBtn.addEventListener("click", async () => {
   refreshAllBtn.disabled = true;
   refreshAllBtn.setAttribute("aria-busy", "true");
@@ -464,7 +450,6 @@ refreshAllBtn.addEventListener("click", async () => {
   }
 });
 
-// Delete repo
 async function handleDelete(url) {
   try {
     await invoke("delete_repo", { url });
@@ -475,7 +460,6 @@ async function handleDelete(url) {
   }
 }
 
-// Delete confirmation dialog
 const deleteDialog = document.getElementById("delete-dialog");
 const deleteCancelBtn = document.getElementById("delete-cancel-btn");
 
@@ -487,25 +471,19 @@ function openDeleteDialog(url) {
 }
 
 deleteDialog.addEventListener("close", async () => {
-  // Capture deletingUrl immediately so a concurrent openDeleteDialog() call
-  // cannot clobber it before the await below completes (mirrors editDialog).
   const oldUrl = deletingUrl;
   deletingUrl = null;
   if (deleteDialog.returnValue !== "confirm" || !oldUrl) return;
   await handleDelete(oldUrl);
 });
 
-// Edit dialog open
 function openEditDialog(url, hostKind) {
   editingUrl = url;
   editUrlInput.value = url;
   editHostSelect.value = hostKind;
   editDialog.showModal();
 }
-// Edit dialog
 editDialog.addEventListener("close", async () => {
-  // Capture editingUrl immediately so a concurrent openEditDialog() call
-  // cannot clobber it before the await below completes (#42).
   const oldUrl = editingUrl;
   editingUrl = null;
 
@@ -535,9 +513,7 @@ editDialog.addEventListener("close", async () => {
   }
 });
 
-// Mirrors parse_url in git_api_handler.rs — must stay in sync with Rust validation.
-// Accepts 2+ non-empty path segments so GitLab subgroup URLs work
-// (e.g. https://gitlab.com/group/subgroup/project).
+// Keep aligned with parse_url in git_api_handler.rs.
 function isValidRepoUrl(url) {
   try {
     const parsed = new URL(url);
@@ -549,7 +525,6 @@ function isValidRepoUrl(url) {
   }
 }
 
-// ── Settings dialog ────────────────────────────────────────────────────────
 const settingsDialog = document.getElementById("settings-dialog");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsSaveBtn = document.getElementById("settings-save-btn");
@@ -578,26 +553,12 @@ async function initApiKeys() {
   settingsState.forgejoTokens = keys.forgejo_tokens || [];
 }
 
-/// Normalises the forgejo_trusted_hosts value from the backend.
-/// Accepts both old Vec<String> format and new Vec<{host, token_ref}> format,
-/// always returning the new object format.
-function normaliseForgejoHosts(raw) {
-  if (!Array.isArray(raw) || raw.length === 0) return [...ENDPOINT_DEFAULTS.forgejoHosts];
-  return raw.map((entry) => {
-    if (typeof entry === "string") {
-      // Old format — upgrade to object in place.
-      return { host: entry, token_ref: forgejoVaultKey(entry) };
-    }
-    return entry;
-  });
-}
-
 async function initEndpoints() {
   const backend = await invoke("get_endpoints");
   settingsState.endpoints = {
     github: backend.github_endpoint || ENDPOINT_DEFAULTS.github,
     gitlab: backend.gitlab_endpoint || ENDPOINT_DEFAULTS.gitlab,
-    forgejoHosts: normaliseForgejoHosts(backend.forgejo_trusted_hosts),
+    forgejoHosts: backend.forgejo_trusted_hosts,
   };
 }
 
@@ -614,8 +575,6 @@ async function pushSettingsToBackend() {
   });
 }
 
-/// Builds the dynamic Forgejo host+token row list inside #settings-forgejo-host-list.
-/// Each row has a hostname input, a token password input, and a Remove button.
 function renderForgejoHostRows() {
   forgejoHostList.innerHTML = "";
   const hosts = settingsState.endpoints.forgejoHosts;
@@ -674,7 +633,6 @@ settingsShowKeys.addEventListener("change", () => {
   const type = settingsShowKeys.checked ? "text" : "password";
   settingsInputs.github.type = type;
   settingsInputs.gitlab.type = type;
-  // Re-render host rows so token inputs pick up the new type.
   renderForgejoHostRows();
 });
 
@@ -692,15 +650,11 @@ forgejoAddHostBtn.addEventListener("click", () => {
   settingsState.endpoints.forgejoHosts.push({ host: "", token_ref: "" });
   settingsState.forgejoTokens.push("");
   renderForgejoHostRows();
-  // Focus the new host input.
   const rows = forgejoHostList.querySelectorAll(".forgejo-host-row");
   const lastRow = rows[rows.length - 1];
   lastRow?.querySelector("input")?.focus();
 });
 
-// Byte offset of the last byte read from the log file. Persisted across
-// refreshLogs() calls within the session for incremental reads (F9).
-// Reset to undefined when the user manually triggers a full refresh.
 let logNextOffset = undefined;
 let logLineCount = 0;
 
@@ -726,7 +680,6 @@ async function refreshLogs(incremental = false) {
     const afterBytes = incremental ? logNextOffset : undefined;
     const chunk = await invoke("get_logs", { limit: 200, afterBytes });
     if (incremental && chunk.lines.length === 0) {
-      // No new data — leave the display unchanged.
       settingsLogsStatus.textContent = settingsLogsOutput.textContent
         ? `${logLineCount} line(s) (no new entries)`
         : "(no log entries yet)";
@@ -734,7 +687,6 @@ async function refreshLogs(incremental = false) {
       const lines = chunk.lines.map(formatLogLine);
       logLineCount = incremental ? logLineCount + lines.length : lines.length;
       if (incremental && settingsLogsOutput.textContent && settingsLogsOutput.textContent !== "(no log entries yet)") {
-        // Append new lines to the existing display.
         settingsLogsOutput.textContent += "\n" + lines.join("\n");
       } else {
         settingsLogsOutput.textContent = lines.length
@@ -753,7 +705,6 @@ async function refreshLogs(incremental = false) {
 }
 
 settingsLogsRefresh.addEventListener("click", () => {
-  // Manual refresh always does a full re-read (resets incremental state).
   logNextOffset = undefined;
   refreshLogs(false);
 });
@@ -781,7 +732,6 @@ settingsSaveBtn.addEventListener("click", async () => {
     gitlab: settingsInputs.gitlab.value,
   };
 
-  // Read current values from the dynamic Forgejo host+token rows.
   const rows = forgejoHostList.querySelectorAll(".forgejo-host-row");
   const newForgejoHosts = [];
   const newForgejoTokens = [];
@@ -792,7 +742,7 @@ settingsSaveBtn.addEventListener("click", async () => {
     if (host) {
       newForgejoHosts.push({
         host,
-        token_ref: forgejoVaultKey(host),
+        token_ref: forgejoTokenRef(host),
       });
       newForgejoTokens.push(token);
     }
