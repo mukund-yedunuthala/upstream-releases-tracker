@@ -343,6 +343,18 @@ fn extract_release_notes(json: &serde_json::Value, host_kind: &ForgeKind) -> Str
     json[key].as_str().unwrap_or("").to_string()
 }
 
+fn extract_release_timestamp(json: &serde_json::Value, host_kind: &ForgeKind) -> String {
+    let key = match host_kind {
+        ForgeKind::GitLab => "released_at",
+        _ => "published_at",
+    };
+    json[key]
+        .as_str()
+        .or_else(|| json["created_at"].as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
 fn build_repo_data(
     json: &serde_json::Value,
     owner: String,
@@ -356,6 +368,7 @@ fn build_repo_data(
         .ok_or_else(|| "API response missing tag_name — repo may have no releases".to_string())?
         .to_string();
     let release_notes = extract_release_notes(json, &host_kind);
+    let latest_release_timestamp = extract_release_timestamp(json, &host_kind);
     Ok(RepoData {
         owner,
         repo_name,
@@ -364,6 +377,7 @@ fn build_repo_data(
         latest_release,
         system_version,
         release_notes,
+        latest_release_timestamp,
     })
 }
 
@@ -399,8 +413,8 @@ pub async fn refresh_repo(config: &Config, old_repo: &RepoData) -> Result<RepoDa
 #[cfg(test)]
 mod tests {
     use super::{
-        build_repo_data, extract_release_notes, forgejo_api_call, github_api_call, http_client,
-        parse_url, send_with_retry,
+        build_repo_data, extract_release_notes, extract_release_timestamp, forgejo_api_call,
+        github_api_call, http_client, parse_url, send_with_retry,
     };
     use crate::{Config, ForgeKind, ForgejoHost};
 
@@ -514,6 +528,59 @@ mod tests {
         assert_eq!(extract_release_notes(&json, &ForgeKind::GitHub), "");
     }
 
+    // --- extract_release_timestamp ---
+
+    #[test]
+    fn extract_release_timestamp_github_uses_published_at() {
+        let json = serde_json::json!({ "published_at": "2024-01-15T10:30:00Z" });
+        assert_eq!(
+            extract_release_timestamp(&json, &ForgeKind::GitHub),
+            "2024-01-15T10:30:00Z"
+        );
+    }
+
+    #[test]
+    fn extract_release_timestamp_gitlab_uses_released_at() {
+        let json = serde_json::json!({ "released_at": "2024-02-20T08:00:00Z" });
+        assert_eq!(
+            extract_release_timestamp(&json, &ForgeKind::GitLab),
+            "2024-02-20T08:00:00Z"
+        );
+    }
+
+    #[test]
+    fn extract_release_timestamp_gitlab_falls_back_to_created_at() {
+        let json = serde_json::json!({ "created_at": "2024-02-19T12:00:00Z" });
+        assert_eq!(
+            extract_release_timestamp(&json, &ForgeKind::GitLab),
+            "2024-02-19T12:00:00Z"
+        );
+    }
+
+    #[test]
+    fn extract_release_timestamp_forgejo_uses_published_at() {
+        let json = serde_json::json!({ "published_at": "2024-03-10T14:00:00Z" });
+        assert_eq!(
+            extract_release_timestamp(&json, &ForgeKind::ForgejoCompatible),
+            "2024-03-10T14:00:00Z"
+        );
+    }
+
+    #[test]
+    fn extract_release_timestamp_forgejo_falls_back_to_created_at() {
+        let json = serde_json::json!({ "created_at": "2024-03-09T09:00:00Z" });
+        assert_eq!(
+            extract_release_timestamp(&json, &ForgeKind::ForgejoCompatible),
+            "2024-03-09T09:00:00Z"
+        );
+    }
+
+    #[test]
+    fn extract_release_timestamp_missing_key_returns_empty() {
+        let json = serde_json::json!({ "tag_name": "v1.0" });
+        assert_eq!(extract_release_timestamp(&json, &ForgeKind::GitHub), "");
+    }
+
     // --- post_request error paths (no HTTP) ---
 
     #[tokio::test]
@@ -585,7 +652,7 @@ mod tests {
 
     #[test]
     fn build_repo_data_succeeds_with_tag_name() {
-        let json = serde_json::json!({ "tag_name": "v1.2.3", "body": "release notes" });
+        let json = serde_json::json!({ "tag_name": "v1.2.3", "body": "release notes", "published_at": "2024-01-15T10:30:00Z" });
         let result = build_repo_data(
             &json,
             "owner".to_string(),
@@ -597,6 +664,7 @@ mod tests {
         .unwrap();
         assert_eq!(result.latest_release, "v1.2.3");
         assert_eq!(result.release_notes, "release notes");
+        assert_eq!(result.latest_release_timestamp, "2024-01-15T10:30:00Z");
     }
 
     #[test]
@@ -637,7 +705,8 @@ mod tests {
         let json = serde_json::json!({
             "tag_name": "v1.0",
             "description": "GitLab notes",
-            "body": "ignored"
+            "body": "ignored",
+            "released_at": "2024-02-20T08:00:00Z"
         });
         let result = build_repo_data(
             &json,
@@ -649,6 +718,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.release_notes, "GitLab notes");
+        assert_eq!(result.latest_release_timestamp, "2024-02-20T08:00:00Z");
     }
 
     // ── send_with_retry ───────────────────────────────────────────────────────

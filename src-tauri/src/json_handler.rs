@@ -21,8 +21,6 @@ pub fn write_json_file<T: Serialize>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(file_path);
 
-    // Write to a temp file alongside the target first.
-    // Append ".tmp" so repos.json → repos.json.tmp, not repos.tmp.
     let mut tmp_os = path.as_os_str().to_owned();
     tmp_os.push(".tmp");
     let tmp_path = PathBuf::from(tmp_os);
@@ -38,7 +36,6 @@ pub fn write_json_file<T: Serialize>(
                 e
             )
         })?;
-        // Explicit flush — BufWriter::drop silently discards flush errors.
         writer.flush().map_err(|e| {
             format!(
                 "Failed to flush write buffer to '{}': {}",

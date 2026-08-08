@@ -64,7 +64,7 @@ Vanilla JS + Vite, no framework. `app.js` is the single JS file. The UI library 
 ### Tauri commands
 
 All defined in `src-tauri/src/lib.rs`:
-`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
+`get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`, `clear_logs`.
 
 ### Adding a new forge
 
@@ -78,7 +78,7 @@ GitLab is implemented as of 3.4.0. Subgroup URL support (≥3 path segments) was
 
 ### URL validation
 
-`isValidRepoUrl` in `app.js` (regex pre-check for instant UX feedback) and `parse_url` in `src-tauri/src/git_api_handler.rs` (authoritative backend validation via `url::Url::parse`) must stay in sync — both enforce HTTPS URLs with at least two path segments (`host/owner/repo`). GitLab subgroup URLs with additional segments (`host/group/subgroup/project`) are valid; `parse_url` joins all segments except the last as the owner.
+`isValidRepoUrl` in `app.js` and `parse_url` in `src-tauri/src/git_api_handler.rs` must stay in sync — both enforce HTTPS URLs with at least two path segments (`host/owner/repo`). GitLab subgroup URLs with additional segments (`host/group/subgroup/project`) are valid; `parse_url` joins all segments except the last as the owner.
 
 ### Security notes
 

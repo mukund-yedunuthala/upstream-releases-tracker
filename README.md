@@ -2,6 +2,10 @@
 
 A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repositories and compares them against the version installed on your system.
 
+## Project status
+
+This is a personal project built with assistance from coding agents. It is provided as-is, and no further development is currently planned.
+
 ## Supported forges
 
 - **GitHub** (public repos and private repos with a personal access token)
@@ -47,7 +51,7 @@ npm run dev
 | Frontend | Vanilla JS + Vite, no framework. `app.js` is the single JS file. UI library: `oat` (bundled). |
 | Backend | Tauri 2.x (`src-tauri/`). All I/O and HTTP happen in Rust. |
 
-Tauri commands: `get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`.
+Tauri commands: `get_repos`, `add_repo`, `edit_repo`, `delete_repo`, `refresh_repo`, `refresh_all`, `mark_as_updated`, `get_endpoints`, `update_endpoints`, `get_api_keys`, `update_api_keys`, `get_logs`, `clear_logs`.
 
 ## Data locations (Linux)
 
