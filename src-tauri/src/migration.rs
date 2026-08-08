@@ -51,6 +51,15 @@ pub fn run_migrations(datafile_path: &str) {
                             obj.insert("release_notes".to_string(), Value::String(String::new()));
                             dirty = true;
                         }
+
+                        // Migration 7: add "latest_release_timestamp" if absent.
+                        if !obj.contains_key("latest_release_timestamp") {
+                            obj.insert(
+                                "latest_release_timestamp".to_string(),
+                                Value::String(String::new()),
+                            );
+                            dirty = true;
+                        }
                     }
                 }
             }
@@ -285,11 +294,37 @@ mod tests {
     }
 
     #[test]
+    fn data_m7_adds_latest_release_timestamp_if_absent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_url": "github.com", "host_kind": "GitHub", "latest_release": "v1", "system_version": "" } }),
+        );
+        run_repos(&file);
+        let out = read_json(&file);
+        assert_eq!(out["https://github.com/a/b"]["latest_release_timestamp"], json!(""));
+    }
+
+    #[test]
+    fn data_m7_idempotent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "https://github.com/a/b": { "owner": "a", "repo_name": "b", "host_url": "github.com", "host_kind": "GitHub", "latest_release": "v1", "system_version": "", "latest_release_timestamp": "2024-01-15T10:30:00Z" } }),
+        );
+        run_repos(&file);
+        let after_one = read_json(&file);
+        run_repos(&file);
+        let after_two = read_json(&file);
+        assert_eq!(after_one, after_two);
+    }
+
+    #[test]
     fn data_idempotent() {
         let file = NamedTempFile::new().unwrap();
         write_json(
             &file,
-            &json!({ "https://github.com/a/b": { "notes": "x", "host": "github.com", "owner": "a", "repo_name": "b", "host_kind": "Unknown", "latest_release": "v1", "system_version": "" } }),
+            &json!({ "https://github.com/a/b": { "notes": "x", "host": "github.com", "owner": "a", "repo_name": "b", "host_kind": "Unknown", "latest_release": "v1", "system_version": "", "latest_release_timestamp": "" } }),
         );
         run_repos(&file);
         let after_one = read_json(&file);

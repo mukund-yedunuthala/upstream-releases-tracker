@@ -72,6 +72,8 @@ pub struct RepoData {
     pub system_version: String,
     #[serde(default)]
     pub release_notes: String,
+    #[serde(default)]
+    pub latest_release_timestamp: String,
 }
 
 /// Shared data-file and runtime configuration state.
@@ -747,6 +749,7 @@ mod tests {
             latest_release: tag.to_string(),
             system_version: String::new(),
             release_notes: String::new(),
+            latest_release_timestamp: String::new(),
         }
     }
 

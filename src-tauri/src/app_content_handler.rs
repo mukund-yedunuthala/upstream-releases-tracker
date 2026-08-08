@@ -98,6 +98,7 @@ mod tests {
             latest_release: tag.to_string(),
             system_version: String::new(),
             release_notes: String::new(),
+            latest_release_timestamp: String::new(),
         }
     }
 

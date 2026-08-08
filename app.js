@@ -154,6 +154,8 @@ function buildCard(url, data) {
       <dd><code class="js-card-latest" data-copy data-tooltip="Click to copy" tabindex="0" role="button"></code></dd>
       <dt>Installed version</dt>
       <dd><code class="js-card-system" data-copy data-tooltip="Click to copy" tabindex="0" role="button"></code></dd>
+      <dt class="js-card-timestamp-label">Released</dt>
+      <dd><code class="js-card-timestamp" data-copy data-tooltip="Click to copy" tabindex="0" role="button"></code></dd>
     </dl>
     <details class="repo-card-notes">
       <summary>Release notes</summary>
@@ -187,6 +189,18 @@ function buildCard(url, data) {
   } else {
     notesEl.dataset.empty = "";
     notesEl.querySelector("summary").tabIndex = -1;
+  }
+
+  const timestampLabel = card.querySelector(".js-card-timestamp-label");
+  const timestampEl = card.querySelector(".js-card-timestamp");
+  if (!isUpToDate && data.latest_release_timestamp) {
+    const formatted = new Date(data.latest_release_timestamp).toLocaleString();
+    timestampLabel.hidden = false;
+    timestampEl.hidden = false;
+    timestampEl.textContent = formatted;
+  } else {
+    timestampLabel.hidden = true;
+    timestampEl.hidden = true;
   }
 
   if (isUpToDate) {
@@ -245,6 +259,7 @@ function applyView() {
       data.host_kind,
       data.latest_release,
       data.system_version,
+      data.latest_release_timestamp,
     ]
       .filter(Boolean)
       .join(" ")
