@@ -171,6 +171,15 @@ pub fn run_config_migrations(config_path: &str) {
                     }
                 }
 
+                // Migration 7: add "theme_mode" if absent.
+                if !obj.contains_key("theme_mode") {
+                    obj.insert(
+                        "theme_mode".to_string(),
+                        Value::String("system".to_string()),
+                    );
+                    dirty = true;
+                }
+
                 // Remove the now-redundant top-level forgejo_token field.
                 // Config::new() no longer includes it; keep removing it so old
                 // config.json files that still carry the blank field are cleaned up.
@@ -302,7 +311,10 @@ mod tests {
         );
         run_repos(&file);
         let out = read_json(&file);
-        assert_eq!(out["https://github.com/a/b"]["latest_release_timestamp"], json!(""));
+        assert_eq!(
+            out["https://github.com/a/b"]["latest_release_timestamp"],
+            json!("")
+        );
     }
 
     #[test]
@@ -500,5 +512,32 @@ mod tests {
     #[test]
     fn config_missing_file_no_crash() {
         run_config_migrations("/tmp/__upstream_tracker_nonexistent_config_12345.json");
+    }
+
+    #[test]
+    fn config_m7_adds_theme_mode_if_absent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/" }),
+        );
+        run_config(&file);
+        let out = read_json(&file);
+        assert_eq!(out["theme_mode"], json!("system"));
+    }
+
+    #[test]
+    fn config_m7_idempotent() {
+        let file = NamedTempFile::new().unwrap();
+        write_json(
+            &file,
+            &json!({ "github_endpoint": "https://api.github.com/repos/", "theme_mode": "dark" }),
+        );
+        run_config(&file);
+        let after_one = read_json(&file);
+        run_config(&file);
+        let after_two = read_json(&file);
+        assert_eq!(after_one, after_two);
+        assert_eq!(after_two["theme_mode"], json!("dark"));
     }
 }

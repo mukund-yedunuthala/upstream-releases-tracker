@@ -44,6 +44,7 @@ pub fn write_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use crate::ForgejoHost;
+    use serde_json::json;
     use tempfile::NamedTempFile;
 
     fn write_and_read(config: &Config) -> Config {
@@ -64,6 +65,7 @@ mod tests {
         assert_eq!(out.forgejo_trusted_hosts, config.forgejo_trusted_hosts);
         assert_eq!(out.github_api_key, config.github_api_key);
         assert_eq!(out.gitlab_api_key, config.gitlab_api_key);
+        assert_eq!(out.theme_mode, config.theme_mode);
     }
 
     #[test]
@@ -74,6 +76,26 @@ mod tests {
         let out = write_and_read(&config);
         assert_eq!(out.github_endpoint, config.github_endpoint);
         assert_eq!(out.gitlab_endpoint, config.gitlab_endpoint);
+        assert_eq!(out.theme_mode, config.theme_mode);
+    }
+
+    #[test]
+    fn old_config_without_theme_mode_deserializes_as_system() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        json_handler::write_json_file::<serde_json::Value>(
+            path,
+            &json!({
+                "github_api_key": "",
+                "github_endpoint": "https://api.github.com/repos/",
+                "gitlab_api_key": "",
+                "gitlab_endpoint": "https://gitlab.com/api/v4/projects/",
+                "forgejo_trusted_hosts": [],
+            }),
+        )
+        .unwrap();
+        let out: Config = json_handler::read_from_json(path).unwrap();
+        assert_eq!(out.theme_mode, "system");
     }
 
     #[test]

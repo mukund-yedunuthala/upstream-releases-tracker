@@ -1,7 +1,3 @@
-:root {
-    color-scheme: dark;
-}
-
 /* oat's :is(button,...) rule (specificity 0,1,1) beats [hidden] (0,1,0) inside the same
    @layer base, so hidden buttons remain visible. Re-assert here, outside any layer. */
 [hidden] {
@@ -132,7 +128,7 @@ main.container {
 /* ── Repo card ── */
 .repo-card {
     width: 100%;
-    border-radius: var(--radius-large);
+    border-radius: var(--radius-medium);
     padding: var(--space-6) var(--space-8);
     display: flex;
     flex-direction: column;
@@ -287,12 +283,6 @@ main.container {
     border-top: 1px solid var(--border);
 }
 
-.repo-card-actions button {
-    font-size: 0.875rem;
-    padding: var(--space-1) var(--space-2);
-    min-height: 2rem;
-}
-
 /* ── Edit & delete dialog internals ── */
 #delete-dialog form {
     display: flex;
@@ -422,6 +412,17 @@ main.container {
     margin: 0;
 }
 
+/* Accent swatch in Appearance settings */
+.accent-swatch {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    vertical-align: middle;
+    margin-left: var(--space-2);
+}
+
 .logs-toolbar {
     display: flex;
     align-items: center;
@@ -491,5 +492,9 @@ main.container {
         flex-direction: column;
         align-items: flex-start;
         gap: var(--space-1);
+    }
+
+    .forgejo-host-row {
+        grid-template-columns: 1fr;
     }
 }

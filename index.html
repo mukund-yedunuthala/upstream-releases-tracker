@@ -145,6 +145,23 @@
                 </header>
 
                 <div id="settings-sections">
+<section class="settings-section">
+                        <h4>Appearance</h4>
+                        <label data-field>
+                            Theme
+                            <select id="settings-theme-mode">
+                                <option value="system">System</option>
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                            </select>
+                        </label>
+                        <div data-field>
+                            <span>Accent color</span>
+                            <span id="settings-accent-swatch" class="accent-swatch" aria-hidden="true"></span>
+                            <small id="settings-accent-status" class="text-light"></small>
+                        </div>
+                    </section>
+
                     <section class="settings-section">
                         <h4>API Keys</h4>
                         <p class="settings-help">

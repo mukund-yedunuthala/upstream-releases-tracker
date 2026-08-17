@@ -24,6 +24,9 @@ const settingsState = {
     gitlab: ENDPOINT_DEFAULTS.gitlab,
     forgejoHosts: [...ENDPOINT_DEFAULTS.forgejoHosts],
   },
+  themeMode: "system",
+  systemScheme: "light",
+  accent: null,
 };
 
 const repoGrid = document.getElementById("repo-grid");
@@ -528,6 +531,57 @@ editDialog.addEventListener("close", async () => {
   }
 });
 
+function applyTheme(settings) {
+  const mode = settings.mode || "system";
+  if (mode === "light") {
+    document.documentElement.style.colorScheme = "light";
+  } else if (mode === "dark") {
+    document.documentElement.style.colorScheme = "dark";
+  } else {
+    document.documentElement.style.removeProperty("color-scheme");
+  }
+
+  if (settings.accent) {
+    const accent = settings.accent;
+    const rgb = `rgb(${Math.round(accent.red * 255)}, ${Math.round(accent.green * 255)}, ${Math.round(accent.blue * 255)})`;
+    document.documentElement.style.setProperty("--primary", rgb);
+    document.documentElement.style.setProperty("--ring", rgb);
+    const luminance = 0.2126 * accent.red + 0.7152 * accent.green + 0.0722 * accent.blue;
+    document.documentElement.style.setProperty("--primary-foreground", luminance > 0.5 ? "#000000" : "#ffffff");
+  } else {
+    document.documentElement.style.removeProperty("--primary");
+    document.documentElement.style.removeProperty("--ring");
+    document.documentElement.style.removeProperty("--primary-foreground");
+  }
+}
+
+async function getThemeSettings() {
+  try {
+    const settings = await invoke("get_theme_settings");
+    applyTheme(settings);
+    return settings;
+  } catch {
+    return { mode: "system", systemScheme: "light", accent: null };
+  }
+}
+
+function updateAccentSwatch(accent) {
+  const swatch = document.getElementById("settings-accent-swatch");
+  const status = document.getElementById("settings-accent-status");
+  if (!swatch) return;
+  if (accent) {
+    const rgb = `rgb(${Math.round(accent.red * 255)}, ${Math.round(accent.green * 255)}, ${Math.round(accent.blue * 255)})`;
+    swatch.style.backgroundColor = rgb;
+    swatch.style.display = "inline-block";
+    if (status) status.textContent = "Using system accent color";
+  } else {
+    swatch.style.backgroundColor = "transparent";
+    swatch.style.border = "1px solid currentColor";
+    swatch.style.display = "inline-block";
+    if (status) status.textContent = "Accent color unavailable";
+  }
+}
+
 // Keep aligned with parse_url in git_api_handler.rs.
 function isValidRepoUrl(url) {
   try {
@@ -651,11 +705,20 @@ settingsShowKeys.addEventListener("change", () => {
   renderForgejoHostRows();
 });
 
-settingsBtn.addEventListener("click", () => {
+settingsBtn.addEventListener("click", async () => {
   settingsShowKeys.checked = false;
   settingsInputs.github.type = "password";
   settingsInputs.gitlab.type = "password";
   populateSettingsInputs();
+  try {
+    const themeSettings = await getThemeSettings();
+    settingsState.themeMode = themeSettings.mode;
+    settingsState.systemScheme = themeSettings.systemScheme;
+    settingsState.accent = themeSettings.accent;
+    populateThemeSettings(themeSettings);
+  } catch (e) {
+    console.warn("Theme refresh failed:", e);
+  }
   settingsDialog.showModal();
   document.getElementById("settings-sections")?.scrollTo({ top: 0 });
   refreshLogs();
@@ -771,13 +834,22 @@ settingsSaveBtn.addEventListener("click", async () => {
     forgejoHosts: newForgejoHosts,
   };
 
+  const themeMode = document.getElementById("settings-theme-mode")?.value || "system";
+
   settingsSaveBtn.disabled = true;
   settingsSaveBtn.setAttribute("aria-busy", "true");
   try {
     settingsState.keys = newKeys;
     settingsState.endpoints = newEndpoints;
     settingsState.forgejoTokens = newForgejoTokens;
+    settingsState.themeMode = themeMode;
     await pushSettingsToBackend();
+    await invoke("update_theme_settings", { mode: themeMode });
+    const themeSettings = await getThemeSettings();
+    settingsState.systemScheme = themeSettings.systemScheme;
+    settingsState.accent = themeSettings.accent;
+    applyTheme(themeSettings);
+    populateThemeSettings(themeSettings);
     ot.toast("Settings saved", "Done", { variant: "success" });
     settingsDialog.close();
   } catch (e) {
@@ -800,10 +872,27 @@ async function initSettings() {
     ot.toast(String(e), "API tokens unavailable", { variant: "warning" });
   }
   try {
+    const themeSettings = await getThemeSettings();
+    settingsState.themeMode = themeSettings.mode;
+    settingsState.systemScheme = themeSettings.systemScheme;
+    settingsState.accent = themeSettings.accent;
+    populateThemeSettings(themeSettings);
+  } catch (e) {
+    console.warn("Theme init failed:", e);
+  }
+  try {
     settingsAppVersion.textContent = `v${await getVersion()}`;
   } catch {
     settingsAppVersion.textContent = "(unknown)";
   }
+}
+
+function populateThemeSettings(settings) {
+  const themeSelect = document.getElementById("settings-theme-mode");
+  if (themeSelect) {
+    themeSelect.value = settings.mode || "system";
+  }
+  updateAccentSwatch(settings.accent);
 }
 
 initSettings();
