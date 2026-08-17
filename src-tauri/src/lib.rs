@@ -3,6 +3,7 @@ mod config_handler;
 mod git_api_handler;
 mod json_handler;
 mod migration;
+mod theme_handler;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -38,6 +39,12 @@ pub struct Config {
     #[serde(skip)]
     pub forgejo_tokens: Vec<String>,
     pub forgejo_trusted_hosts: Vec<ForgejoHost>,
+    #[serde(default = "default_theme_mode")]
+    pub theme_mode: String,
+}
+
+fn default_theme_mode() -> String {
+    "system".to_string()
 }
 
 impl Default for Config {
@@ -58,6 +65,7 @@ impl Config {
                 host: "codeberg.org".to_string(),
                 token_ref: "forgejo_token:codeberg.org".to_string(),
             }],
+            theme_mode: "system".to_string(),
         }
     }
 }
@@ -520,6 +528,25 @@ struct LogChunk {
 }
 
 #[tauri::command]
+async fn get_theme_settings(
+    state: tauri::State<'_, AppState>,
+) -> Result<theme_handler::ThemeSettings, String> {
+    let config = state.config.lock().await;
+    Ok(theme_handler::query_system_theme(&config))
+}
+
+#[tauri::command]
+async fn update_theme_settings(
+    state: tauri::State<'_, AppState>,
+    mode: String,
+) -> Result<(), String> {
+    let mut config = state.config.lock().await;
+    theme_handler::persist_theme_mode(&mut config, &mode)
+        .map_err(|e| format!("Failed to update theme settings: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_logs(
     app: tauri::AppHandle,
     limit: usize,
@@ -720,6 +747,8 @@ pub fn run() {
             update_endpoints,
             get_api_keys,
             update_api_keys,
+            get_theme_settings,
+            update_theme_settings,
             get_logs,
             clear_logs,
         ])
