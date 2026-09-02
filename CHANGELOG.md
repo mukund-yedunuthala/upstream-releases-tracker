@@ -1,5 +1,12 @@
 # Changelog
 
+### [v3.6.1](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.0...v3.6.1) (2026-09-02)
+
+#### Fixes
+
+* third party license notices link
+([e196cea](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/commit/e196cea3803e717b26ad45747ab0d9bf0af1fdfc))
+
 ## [v3.6.0](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.5.8...v3.6.0) (2026-08-17)
 
 ### Features
