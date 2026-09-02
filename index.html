@@ -16,7 +16,9 @@
                             <select id="repo-host-select">
                                 <option value="GitHub">GitHub</option>
                                 <option value="GitLab">GitLab</option>
-                                <option value="ForgejoCompatible">Forgejo</option>
+                                <option value="ForgejoCompatible">
+                                    Forgejo
+                                </option>
                             </select>
                             <input
                                 type="url"
@@ -27,7 +29,9 @@
                             />
                             <button id="add-repo-btn">Add repo</button>
                         </fieldset>
-                        <small class="error" id="repo-url-error">URL must be https://host/owner/repo</small>
+                        <small class="error" id="repo-url-error"
+                            >URL must be https://host/owner/repo</small
+                        >
                     </div>
                     <button
                         class="outline"
@@ -55,10 +59,41 @@
                     placeholder="Search repos…"
                     aria-label="Search repositories"
                 />
-                <menu class="buttons" id="repo-filter" role="group" aria-label="Filter by status">
-                    <li><button type="button" data-filter="all" aria-pressed="true">All</button></li>
-                    <li><button type="button" data-filter="outdated" class="outline" aria-pressed="false">Outdated</button></li>
-                    <li><button type="button" data-filter="uptodate" class="outline" aria-pressed="false">Up to date</button></li>
+                <menu
+                    class="buttons"
+                    id="repo-filter"
+                    role="group"
+                    aria-label="Filter by status"
+                >
+                    <li>
+                        <button
+                            type="button"
+                            data-filter="all"
+                            aria-pressed="true"
+                        >
+                            All
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            type="button"
+                            data-filter="outdated"
+                            class="outline"
+                            aria-pressed="false"
+                        >
+                            Outdated
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            type="button"
+                            data-filter="uptodate"
+                            class="outline"
+                            aria-pressed="false"
+                        >
+                            Up to date
+                        </button>
+                    </li>
                 </menu>
                 <select id="repo-sort" aria-label="Sort repositories">
                     <option value="name">Sort: Name</option>
@@ -67,7 +102,12 @@
                 </select>
             </div>
             <section id="repo-grid"></section>
-            <footer id="app-status" class="hstack text-light" aria-live="polite" hidden>
+            <footer
+                id="app-status"
+                class="hstack text-light"
+                aria-live="polite"
+                hidden
+            >
                 <small id="app-status-counts"></small>
                 <small id="app-status-refresh"></small>
             </footer>
@@ -125,14 +165,12 @@
                     </label>
                 </div>
                 <footer>
-                    <button
-                        type="button"
-                        id="edit-cancel-btn"
-                        class="outline"
-                    >
+                    <button type="button" id="edit-cancel-btn" class="outline">
                         Cancel
                     </button>
-                    <button type="submit" value="save" id="edit-save-btn">Save</button>
+                    <button type="submit" value="save" id="edit-save-btn">
+                        Save
+                    </button>
                 </footer>
             </form>
         </dialog>
@@ -145,7 +183,7 @@
                 </header>
 
                 <div id="settings-sections">
-<section class="settings-section">
+                    <section class="settings-section">
                         <h4>Appearance</h4>
                         <label data-field>
                             Theme
@@ -157,16 +195,24 @@
                         </label>
                         <div data-field>
                             <span>Accent color</span>
-                            <span id="settings-accent-swatch" class="accent-swatch" aria-hidden="true"></span>
-                            <small id="settings-accent-status" class="text-light"></small>
+                            <span
+                                id="settings-accent-swatch"
+                                class="accent-swatch"
+                                aria-hidden="true"
+                            ></span>
+                            <small
+                                id="settings-accent-status"
+                                class="text-light"
+                            ></small>
                         </div>
                     </section>
 
                     <section class="settings-section">
                         <h4>API Keys</h4>
                         <p class="settings-help">
-                            Tokens are stored in your operating system keyring and
-                            only sent as authentication headers to configured forges.
+                            Tokens are stored in your operating system keyring
+                            and only sent as authentication headers to
+                            configured forges.
                         </p>
                         <label data-field>
                             GitHub token
@@ -177,7 +223,9 @@
                                 spellcheck="false"
                             />
                             <small data-hint>
-                                Personal access token with <code>public_repo</code> scope (classic) or read-only Contents access (fine-grained).
+                                Personal access token with
+                                <code>public_repo</code> scope (classic) or
+                                read-only Contents access (fine-grained).
                             </small>
                         </label>
                         <label data-field>
@@ -189,7 +237,8 @@
                                 spellcheck="false"
                             />
                             <small data-hint>
-                                Personal access token with <code>read_api</code> scope.
+                                Personal access token with
+                                <code>read_api</code> scope.
                             </small>
                         </label>
                         <label data-field>
@@ -226,11 +275,16 @@
                             <span>Forgejo / Gitea hosts &amp; tokens</span>
                             <small data-hint>
                                 Each trusted host can have its own access token
-                                (<code>read:repository</code> permission). Leave token
-                                blank for unauthenticated access (public repos only).
+                                (<code>read:repository</code> permission). Leave
+                                token blank for unauthenticated access (public
+                                repos only).
                             </small>
                             <div id="settings-forgejo-host-list"></div>
-                            <button type="button" id="settings-forgejo-add-host" class="outline">
+                            <button
+                                type="button"
+                                id="settings-forgejo-add-host"
+                                class="outline"
+                            >
                                 + Add host
                             </button>
                         </div>
@@ -253,7 +307,10 @@
                             >
                                 Clear
                             </button>
-                            <small id="settings-logs-status" class="text-light"></small>
+                            <small
+                                id="settings-logs-status"
+                                class="text-light"
+                            ></small>
                         </div>
                         <pre id="settings-logs-output"></pre>
                     </section>
@@ -265,39 +322,43 @@
                             <dd><span id="settings-app-version">…</span></dd>
                             <dt>License</dt>
                             <dd>
-                                <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>
+                                <a
+                                    href="https://www.gnu.org/licenses/agpl-3.0.html"
+                                    >AGPL-3.0-or-later</a
+                                >
                             </dd>
                             <dt>Source</dt>
                             <dd>
-                                <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs">gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs</a>
+                                <a
+                                    href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs"
+                                    >gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs</a
+                                >
                             </dd>
                             <dt>Notices</dt>
                             <dd>
-                                <a href="https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs/-/blob/main/docs/NOTICES">Third-party attributions</a>
+                                <a
+                                    href="https://raw.githubusercontent.com/mukund-yedunuthala/upstream-releases-tracker/refs/heads/main/docs/NOTICES"
+                                    >Third-party attributions</a
+                                >
                             </dd>
                         </dl>
                         <p class="muted">
                             Tracks release tags across GitHub, GitLab and
-                            Forgejo / Gitea, and compares them to versions you have
-                            installed.
+                            Forgejo / Gitea, and compares them to versions you
+                            have installed.
                         </p>
                         <p class="muted">
-                            No telemetry or analytics are collected. API tokens are
-                            stored in the operating system keyring and transmitted only
-                            as authentication headers to the forge endpoints you
-                            configure. All other data is stored locally on your
-                            device.
+                            No telemetry or analytics are collected. API tokens
+                            are stored in the operating system keyring and
+                            transmitted only as authentication headers to the
+                            forge endpoints you configure. All other data is
+                            stored locally on your device.
                         </p>
                     </section>
                 </div>
 
                 <footer>
-                    <button
-                        type="button"
-                        id="settings-save-btn"
-                    >
-                        Save
-                    </button>
+                    <button type="button" id="settings-save-btn">Save</button>
                     <button value="close" class="outline">Close</button>
                 </footer>
             </form>
