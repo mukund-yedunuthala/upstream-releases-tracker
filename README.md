@@ -1,5 +1,7 @@
 # Upstream Releases Tracker
 
+[![AI-DECLARATION: copilot](https://img.shields.io/badge/䷼%20AI--DECLARATION-copilot-fee2e2?labelColor=fee2e2)](https://ai-declaration.md)
+
 A desktop app (Tauri 2.x) that tracks the latest release tags from upstream repositories and compares them against the version installed on your system.
 
 ## Project status
