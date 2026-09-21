@@ -1,3 +1,17 @@
 [workspace]
 resolver = "2"
 members = ["src-tauri"]
+
+[patch.crates-io]
+tauri = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-build = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-runtime = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-runtime-wry = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-macros = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-codegen = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-utils = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tauri-plugin = { git = "https://github.com/rmakestrash-jpg/tauri", rev = "402ebddca9c2891594341edc7f5967ed1f6ded54" }
+tao = { git = "https://github.com/rmakestrash-jpg/tao", rev = "dfa8a322eef7f5b8a6a8a9dcbe7924dd3be0cdeb" }
+wry = { git = "https://github.com/rmakestrash-jpg/wry", rev = "7222c92af3c91998ee37e8ee1635fb3830a13c82" }
+muda = { git = "https://github.com/rmakestrash-jpg/muda", rev = "350b9bda3eabd7327e1a2592019cd33e7f559d44" }
+tray-icon = { git = "https://github.com/rmakestrash-jpg/tray-icon", rev = "1d014fd17ceef7eb0d1841c4a62675fa754ee02b" }
