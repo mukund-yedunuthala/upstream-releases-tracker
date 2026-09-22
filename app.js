@@ -13,7 +13,9 @@ function forgejoTokenRef(host) {
 const ENDPOINT_DEFAULTS = {
   github: "https://api.github.com/repos/",
   gitlab: "https://gitlab.com/api/v4/projects/",
-  forgejoHosts: [{ host: "codeberg.org", token_ref: "forgejo_token:codeberg.org" }],
+  forgejoHosts: [
+    { host: "codeberg.org", token_ref: "forgejo_token:codeberg.org" },
+  ],
 };
 
 const settingsState = {
@@ -132,9 +134,7 @@ function buildCard(url, data) {
   const safeUrl = url.startsWith("https://") ? url : null;
   const shortUrl = safeUrl ? safeUrl.replace(/^https:\/\//, "") : "";
   const name =
-    data.owner && data.repo_name
-      ? `${data.owner}/${data.repo_name}`
-      : shortUrl;
+    data.owner && data.repo_name ? `${data.owner}/${data.repo_name}` : shortUrl;
   const latest = data.latest_release || "—";
   const system = data.system_version || "—";
   const card = document.createElement("article");
@@ -252,8 +252,10 @@ function repoSortKey({ url, data }) {
 function applyView() {
   const q = viewState.search.toLowerCase();
   let rows = allRepos.filter(({ url, data }) => {
-    if (viewState.filter === "outdated" && isRepoUpToDate({ data })) return false;
-    if (viewState.filter === "uptodate" && !isRepoUpToDate({ data })) return false;
+    if (viewState.filter === "outdated" && isRepoUpToDate({ data }))
+      return false;
+    if (viewState.filter === "uptodate" && !isRepoUpToDate({ data }))
+      return false;
     if (!q) return true;
     const haystack = [
       url,
@@ -418,7 +420,6 @@ urlInput.addEventListener("input", () => {
   }
 });
 
-
 urlInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
@@ -546,8 +547,12 @@ function applyTheme(settings) {
     const rgb = `rgb(${Math.round(accent.red * 255)}, ${Math.round(accent.green * 255)}, ${Math.round(accent.blue * 255)})`;
     document.documentElement.style.setProperty("--primary", rgb);
     document.documentElement.style.setProperty("--ring", rgb);
-    const luminance = 0.2126 * accent.red + 0.7152 * accent.green + 0.0722 * accent.blue;
-    document.documentElement.style.setProperty("--primary-foreground", luminance > 0.5 ? "#000000" : "#ffffff");
+    const luminance =
+      0.2126 * accent.red + 0.7152 * accent.green + 0.0722 * accent.blue;
+    document.documentElement.style.setProperty(
+      "--primary-foreground",
+      luminance > 0.5 ? "#000000" : "#ffffff",
+    );
   } else {
     document.documentElement.style.removeProperty("--primary");
     document.documentElement.style.removeProperty("--ring");
@@ -764,7 +769,11 @@ async function refreshLogs(incremental = false) {
     } else {
       const lines = chunk.lines.map(formatLogLine);
       logLineCount = incremental ? logLineCount + lines.length : lines.length;
-      if (incremental && settingsLogsOutput.textContent && settingsLogsOutput.textContent !== "(no log entries yet)") {
+      if (
+        incremental &&
+        settingsLogsOutput.textContent &&
+        settingsLogsOutput.textContent !== "(no log entries yet)"
+      ) {
         settingsLogsOutput.textContent += "\n" + lines.join("\n");
       } else {
         settingsLogsOutput.textContent = lines.length
@@ -803,7 +812,6 @@ settingsLogsClear.addEventListener("click", async () => {
   }
 });
 
-
 settingsSaveBtn.addEventListener("click", async () => {
   const newKeys = {
     github: settingsInputs.github.value,
@@ -834,7 +842,8 @@ settingsSaveBtn.addEventListener("click", async () => {
     forgejoHosts: newForgejoHosts,
   };
 
-  const themeMode = document.getElementById("settings-theme-mode")?.value || "system";
+  const themeMode =
+    document.getElementById("settings-theme-mode")?.value || "system";
 
   settingsSaveBtn.disabled = true;
   settingsSaveBtn.setAttribute("aria-busy", "true");
@@ -861,7 +870,10 @@ settingsSaveBtn.addEventListener("click", async () => {
 });
 
 async function initSettings() {
-  const endpointErr = await initEndpoints().then(() => null, (e) => e);
+  const endpointErr = await initEndpoints().then(
+    () => null,
+    (e) => e,
+  );
   if (endpointErr) {
     console.warn("Endpoint init failed:", endpointErr);
   }
