@@ -1,5 +1,12 @@
 # Changelog
 
+### [v3.6.4](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.3...v3.6.4) (2026-10-01)
+
+#### Fixes
+
+* git repo link
+([9706db7](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/commit/9706db71de5798626bd1c01d5ab79a08227f9bd7))
+
 ### [v3.6.3](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.2...v3.6.3) (2026-10-01)
 
 #### Fixes
