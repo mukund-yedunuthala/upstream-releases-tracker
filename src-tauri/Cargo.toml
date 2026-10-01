@@ -1,12 +1,12 @@
 [package]
 name = "upstream-releases-tracker-lib"
-version = "3.6.3"
+version = "3.6.4"
 description = "Track releases from upstream repositories of projects"
 authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs"
-homepage = "https://gitlab.com/mukund-yedunuthala/upstream-release-tracker-rs"
+repository = "https://github.com/mukund-yedunuthala/upstream-releases-tracker"
+homepage = "https://github.com/mukund-yedunuthala/upstream-releases-tracker"
 
 
 [lib]
