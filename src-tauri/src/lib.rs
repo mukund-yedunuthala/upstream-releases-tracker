@@ -11,17 +11,12 @@ use tauri::Manager;
 
 static DATAFILE: &str = "upstream-releases-tracker/data/repos.json";
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, Default)]
 pub enum ForgeKind {
+    #[default]
     GitHub,
     GitLab,
     ForgejoCompatible,
-}
-
-impl Default for ForgeKind {
-    fn default() -> Self {
-        ForgeKind::GitHub
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]

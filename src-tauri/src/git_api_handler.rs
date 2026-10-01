@@ -1,17 +1,52 @@
 use crate::{Config, ForgeKind, RepoData};
 use reqwest::Client;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 fn http_client() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
+    static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         Client::builder()
             .user_agent("Upstream-Release-Tracker")
             .timeout(std::time::Duration::from_secs(15))
             .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .expect("Failed to build HTTP client")
-    })
+    });
+    &CLIENT
+}
+
+fn decode_path_segments(path: &str) -> Result<Vec<String>, String> {
+    path.split('/')
+        .map(|segment| {
+            percent_encoding::percent_decode_str(segment)
+                .decode_utf8()
+                .map(|decoded| decoded.into_owned())
+                .map_err(|_| "Repository path contains invalid UTF-8".to_string())
+        })
+        .collect()
+}
+
+fn append_path_segments(base: &str, segments: &[String]) -> Result<url::Url, String> {
+    let mut url = url::Url::parse(base).map_err(|e| e.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "URL cannot be used as a hierarchical base".to_string())?
+        .pop_if_empty()
+        .extend(segments.iter().map(String::as_str));
+    Ok(url)
+}
+
+fn gitlab_project_api_url(
+    endpoint: &str,
+    owner: &str,
+    repo: &str,
+    resource: &[&str],
+) -> Result<url::Url, String> {
+    let mut project_segments = decode_path_segments(owner)?;
+    project_segments.extend(decode_path_segments(repo)?);
+    let project_id = project_segments.join("/");
+
+    let mut path = vec![project_id];
+    path.extend(resource.iter().map(|part| (*part).to_string()));
+    append_path_segments(endpoint, &path)
 }
 
 /// Parses a repo URL into (owner, repo) where owner may be a slash-joined
@@ -67,27 +102,21 @@ async fn gitlab_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
-    let encode_segment =
-        |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
-    let project_slug = format!("{}%2F{}", encode_segment(owner), encode_segment(repo));
-
     // Helper: build an authorized GET request for a GitLab API URL and validate
     // that the endpoint host hasn't been tampered with before sending the token.
-    let make_request = |url: &str| -> Result<reqwest::RequestBuilder, String> {
-        let parsed =
-            url::Url::parse(url).map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
-        if parsed.scheme() != "https" {
+    let make_request = |url: &url::Url| -> Result<reqwest::RequestBuilder, String> {
+        if url.scheme() != "https" {
             return Err(format!(
                 "GitLab endpoint must use HTTPS (got '{}'). Check gitlab_endpoint in settings.",
-                parsed.scheme()
+                url.scheme()
             ));
         }
-        if parsed.host_str().is_none() {
+        if url.host_str().is_none() {
             return Err(
                 "GitLab endpoint URL has no host. Check gitlab_endpoint in settings.".to_string(),
             );
         }
-        let mut req = http_client().get(url);
+        let mut req = http_client().get(url.clone());
         if !config.gitlab_api_key.is_empty() {
             // Validate host before sending the token — defense-in-depth against
             // path injection escaping into the host position.
@@ -95,7 +124,7 @@ async fn gitlab_api_call(
             let endpoint_host = url::Url::parse(&config.gitlab_endpoint)
                 .ok()
                 .and_then(|u| u.host_str().map(|s| s.to_string()));
-            if parsed.host_str().map(|s| s.to_string()) != endpoint_host {
+            if url.host_str().map(|s| s.to_string()) != endpoint_host {
                 return Err(
                     "GitLab API token refused: constructed URL host does not match \
                      gitlab_endpoint host. Check gitlab_endpoint in settings."
@@ -109,10 +138,13 @@ async fn gitlab_api_call(
 
     // Try the semver-aware permalink endpoint first (available since GitLab 15.7).
     // Falls back to the releases array if the endpoint returns 404 or an error.
-    let permalink_url = format!(
-        "{}{}/releases/permalink/latest",
-        config.gitlab_endpoint, project_slug
-    );
+    let permalink_url = gitlab_project_api_url(
+        &config.gitlab_endpoint,
+        owner,
+        repo,
+        &["releases", "permalink", "latest"],
+    )
+    .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
     if let Ok(req) = make_request(&permalink_url) {
         if let Ok(resp) = req.send().await {
             if resp.status().as_u16() == 200 {
@@ -127,7 +159,8 @@ async fn gitlab_api_call(
     }
 
     // Fallback: fetch the releases array and return the first non-draft entry.
-    let array_url = format!("{}{}/releases", config.gitlab_endpoint, project_slug);
+    let array_url = gitlab_project_api_url(&config.gitlab_endpoint, owner, repo, &["releases"])
+        .map_err(|e| format!("Invalid GitLab endpoint URL: {}", e))?;
     let response = send_with_retry(make_request(&array_url)?).await?;
 
     let status = response.status();
@@ -177,18 +210,19 @@ async fn github_api_call(
     owner: &str,
     repo: &str,
 ) -> Result<serde_json::Value, String> {
-    let api_url = format!(
-        "{}{}/{}/releases/latest",
-        config.github_endpoint, owner, repo
-    );
+    let mut path = decode_path_segments(owner)?;
+    path.extend(decode_path_segments(repo)?);
+    path.extend(["releases", "latest"].map(str::to_string));
+    let api_url = append_path_segments(&config.github_endpoint, &path)
+        .map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
 
-    let mut request = http_client().get(&api_url);
+    let mut request = http_client().get(api_url.clone());
 
     if !config.github_api_key.is_empty() {
         // Validate endpoint host before sending the token to prevent exfiltration
         // if github_endpoint is misconfigured to an attacker-controlled URL.
-        let parsed =
-            url::Url::parse(&api_url).map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
+        let parsed = url::Url::parse(api_url.as_str())
+            .map_err(|e| format!("Invalid GitHub endpoint URL: {}", e))?;
         if parsed.host_str() != Some("api.github.com") {
             return Err(format!(
                 "GitHub API token refused: endpoint host '{}' is not 'api.github.com'. \
@@ -196,7 +230,7 @@ async fn github_api_call(
                 parsed.host_str().unwrap_or("(none)")
             ));
         }
-        request = request.header("Authorization", format!("Bearer {}", config.github_api_key));
+        request = request.bearer_auth(&config.github_api_key);
     }
 
     let response = send_with_retry(request).await?;
@@ -263,12 +297,14 @@ async fn forgejo_api_call(
 
     // Forgejo and Gitea share the same API surface.
     // Endpoint: GET https://{host}/api/v1/repos/{owner}/{repo}/releases/latest
-    let api_url = format!(
-        "https://{}/api/v1/repos/{}/{}/releases/latest",
-        host_url, owner, repo
-    );
+    let mut path = ["api", "v1", "repos"].map(str::to_string).to_vec();
+    path.extend(decode_path_segments(owner)?);
+    path.extend(decode_path_segments(repo)?);
+    path.extend(["releases", "latest"].map(str::to_string));
+    let api_url = append_path_segments(&format!("https://{}", host_url), &path)
+        .map_err(|e| format!("Invalid Forgejo API URL: {}", e))?;
 
-    let mut request = http_client().get(&api_url);
+    let mut request = http_client().get(api_url);
 
     if !token.is_empty() {
         request = request.header("Authorization", format!("token {}", token));
@@ -413,8 +449,9 @@ pub async fn refresh_repo(config: &Config, old_repo: &RepoData) -> Result<RepoDa
 #[cfg(test)]
 mod tests {
     use super::{
-        build_repo_data, extract_release_notes, extract_release_timestamp, forgejo_api_call,
-        github_api_call, http_client, parse_url, send_with_retry,
+        append_path_segments, build_repo_data, extract_release_notes, extract_release_timestamp,
+        forgejo_api_call, github_api_call, gitlab_project_api_url, http_client, parse_url,
+        send_with_retry,
     };
     use crate::{Config, ForgeKind, ForgejoHost};
 
@@ -494,6 +531,49 @@ mod tests {
     fn parse_url_rejects_too_long() {
         let long = format!("https://github.com/{}", "a".repeat(2048));
         assert!(parse_url(&long).is_err());
+    }
+
+    #[test]
+    fn gitlab_project_url_encodes_subgroup_as_one_project_id() {
+        let url = gitlab_project_api_url(
+            "https://gitlab.example/custom/api/v4/projects/",
+            "group/subgroup",
+            "project",
+            &["releases", "permalink", "latest"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://gitlab.example/custom/api/v4/projects/group%2Fsubgroup%2Fproject/releases/permalink/latest"
+        );
+    }
+
+    #[test]
+    fn gitlab_project_url_decodes_before_encoding_and_preserves_endpoint_query() {
+        let url = gitlab_project_api_url(
+            "https://gitlab.example/api/v4/projects/?access=custom",
+            "group%2Fname/subgroup%20name",
+            "project%2Bname",
+            &["releases"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://gitlab.example/api/v4/projects/group%2Fname%2Fsubgroup%20name%2Fproject+name/releases?access=custom"
+        );
+    }
+
+    #[test]
+    fn append_path_segments_encodes_path_data_and_preserves_base_path() {
+        let path = ["owner/name".to_string(), "repo name".to_string()];
+        let url = append_path_segments("https://api.example/custom/repos/", &path).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://api.example/custom/repos/owner%2Fname/repo%20name"
+        );
     }
 
     // --- extract_release_notes ---
