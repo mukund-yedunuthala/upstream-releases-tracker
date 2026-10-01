@@ -1,5 +1,12 @@
 # Changelog
 
+### [v3.6.3](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.2...v3.6.3) (2026-10-01)
+
+#### Fixes
+
+* cleanup pass with url crate, reqwests, regression tests
+([e56c571](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/commit/e56c57119e3129e7aed8c375aa07ac7d43b2331e))
+
 ### [v3.6.2](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.1...v3.6.2) (2026-09-21)
 
 ### [v3.6.1](https://gitlab.com/mukund-yedunuthala/upstream-releases-tracker-tauri/compare/v3.6.0...v3.6.1) (2026-09-02)
