@@ -6,10 +6,10 @@ Upstream Releases Tracker is a Tauri 2.x desktop app for tracking latest release
 
 ## Commands
 
-- Install frontend dependencies: `npm install`
-- Frontend-only dev server: `npm run dev` (Vite on `localhost:1420`)
+- Install frontend dependencies: `pnpm install`
+- Frontend-only dev server: `pnpm dev` (Vite on `localhost:1420`)
 - Full Tauri dev app: `cd src-tauri && cargo tauri dev`
-- Build frontend: `npm run build`
+- Build frontend: `pnpm build`
 - Build Tauri bundle: `cd src-tauri && cargo tauri build`
 - Run Rust tests: `cargo test --workspace`
 
