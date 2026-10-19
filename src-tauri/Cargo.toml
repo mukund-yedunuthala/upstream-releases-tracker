@@ -1,6 +1,6 @@
 [package]
 name = "upstream-releases-tracker-lib"
-version = "3.6.4"
+version = "3.6.5"
 description = "Track releases from upstream repositories of projects"
 authors = ["Mukund Yedunuthala <mukundkash1997@gmx.net>"]
 edition = "2024"
@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "^2", features = [] }
 
 [dependencies]
-tauri = { version = "^2", features = [] }
+tauri = { version = "^2.12.3", features = [] }
 tauri-plugin-opener = "^2"
 tauri-plugin-log = "^2"
 log = "^0.4"
