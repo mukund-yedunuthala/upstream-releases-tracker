@@ -2,12 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Upstream Releases Tracker",
   "mainBinaryName": "Upstream Releases Tracker",
-  "version": "3.6.2",
+  "version": "3.6.5",
   "identifier": "page.mukundyedunuthala.upstream-releases-tracker",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm ci && npm run build",
+    "beforeBuildCommand": "pnpm install --frozen-lockfile && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {

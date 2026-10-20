@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@knadh/oat@1.0.0'

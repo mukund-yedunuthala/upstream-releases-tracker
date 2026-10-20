@@ -19,7 +19,7 @@ This is a personal project built with assistance from coding agents. It is provi
 Install frontend dependencies (only needed once or after `package.json` changes):
 
 ```sh
-npm install
+pnpm install
 ```
 
 Run in dev mode (starts the Vite dev server and the Tauri shell):
@@ -43,7 +43,7 @@ cargo test --workspace
 Frontend-only dev (Vite at `localhost:1420`, no Tauri):
 
 ```sh
-npm run dev
+pnpm dev
 ```
 
 ## Architecture
